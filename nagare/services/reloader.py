@@ -35,6 +35,9 @@ class Monitor(watchdog.WatchdogFileMonitor):
         action, kw = self.actions.get(path, (lambda path: True, {}))
 
         if action(path, **kw):
+            self.paths.clear()
+            self.dirpaths.clear()
+
             on_change(path)
 
 
