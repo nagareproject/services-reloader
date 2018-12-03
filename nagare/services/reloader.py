@@ -8,75 +8,165 @@
 # --
 
 import os
-try:
-    import cPickle as pickle
-except ImportError:
-    import pickle
+import sys
+import json
+import signal
+import platform
+import subprocess
+from functools import partial
+
+from webob import exc
+from watchdog.observers import Observer
 
 from nagare.services import plugin
-from hupper import reloader, watchdog
 
 
-class Monitor(watchdog.WatchdogFileMonitor):
-    def __init__(self, callback, logger, **kw):
-        super(Monitor, self).__init__(lambda path: self.on_change(callback, path), logger, **kw)
-        self.actions = {}
-
-    def add_path(self, path):
-        if not isinstance(path, str) or not path.startswith(os.sep):
-            path, action, kw = pickle.loads(path)
-            if action:
-                self.actions[path] = (action, kw)
-
-        if not path.endswith('.pyc') and ('lib/python' not in path):
-            super(Monitor, self).add_path(path)
-
-    def on_change(self, on_change, path):
-        action, kw = self.actions.get(path, (lambda path: True, {}))
-
-        if action(path, **kw):
-            self.paths.clear()
-            self.dirpaths.clear()
-
-            on_change(path)
+class Dispatch(object):
+    def __init__(self, dispatch):
+        self.dispatch = dispatch
 
 
-class Reloader(plugin.Plugin, reloader.Reloader):
+class Reloader(plugin.Plugin):
     """Reload on source changes
     """
-    LOAD_PRIORITY = 0
-    CONFIG_SPEC = {
-        'interval': 'integer(default=1)',
-        'files': 'force_list(default="")',
-        '_config_filename': 'string(default=$config_filename)',
-        '_user_config_filename': 'string(default=$user_config_filename)'
-    }
-
-    def __init__(self, name, dist, interval, files, _config_filename, _user_config_filename):
+    def __init__(self, name, dist, statics_service=None):
         """Initialization
         """
         plugin.Plugin.__init__(self, name, dist)
-        self.plugin_category = 'nagare.services'
+        self.statics = statics_service
 
-        reloader.Reloader.__init__(
-            self,
-            logger=None,
-            worker_path='nagare.admin.admin.run',
-            reload_interval=interval,
-            monitor_factory=Monitor
-        )
+        self.dir_observer = Observer()
+        self.dir_dispatcher = Dispatch(self.dir_dispatch)
+        self.dir_actions = []
+        self.file_observer = Observer()
+        self.file_actions = {}
+        self.file_dispatcher = Dispatch(self.file_dispatch)
 
-        self.files = filter(None, files + [_config_filename, _user_config_filename])
+        self.websockets = set()
+        self.first_request = True
+        self.reload = None
 
-    @staticmethod
-    def watch_files(files, action=None, **kw):
-        if reloader.is_active():
-            for file in files:
-                file = os.path.abspath(file)
-                reloader.get_reloader().pipe.send(('watch', (pickle.dumps((file, action, kw), 0),)))
+    def monitor(self, reload_action):
+        if 'nagare_reloaded' in os.environ:
+            self.start(reload_action)
+            return 0
 
-    def start(self):
-        if not reloader.is_active():
-            self.run()
-        else:
-            self.watch_files(self.files)
+        exit_code = 3
+
+        while exit_code == 3:
+            # args = [_quote_first_command_arg(sys.executable)] + sys.argv
+            args = [sys.executable] + sys.argv
+            environ = os.environ.copy()
+            environ['nagare_reloaded'] = 'True'
+
+            proc = None
+            try:
+                # _turn_sigterm_into_systemexit()
+                proc = subprocess.Popen(args, env=environ)
+                exit_code = proc.wait()
+                proc = None
+            except KeyboardInterrupt:
+                exit_code = 1
+            finally:
+                if (proc is not None) and hasattr(os, 'kill') and (platform.system() != 'Windows'):
+                    os.kill(proc.pid, signal.SIGTERM)
+
+        return exit_code
+
+    def watch_dir(self, dirname, action=None, recursive=False, **kw):
+        self.dir_actions.append((dirname + os.path.sep, action, kw))
+        self.dir_actions.sort(key=lambda a: len(a[0]), reverse=True)
+        self.dir_observer.schedule(self.dir_dispatcher, os.path.abspath(dirname), recursive)
+
+    def watch_file(self, filename, action=None, **kw):
+        filename = os.path.abspath(filename)
+        dirname = os.path.dirname(filename)
+
+        self.file_actions[filename] = (action, kw)
+        self.file_observer.schedule(self.file_dispatcher, dirname,)
+
+    def default_action(self, _, path):
+        if self.reload is not None:
+            print('Reloading: %s modified' % path)
+            self.reload(self, path)
+
+    def dir_dispatch(self, event):
+        path = event.src_path
+        for dirname, action, kw in self.dir_actions:
+            if path.startswith(dirname) and (action or self.default_action)(self, path[:len(dirname)], path[len(dirname):], **kw):
+                self.default_action(self, path)
+                break
+
+    def file_dispatch(self, event):
+        path = event.src_path
+        action = self.file_actions.get(path)
+        if (action is not None) and (action[0] or self.default_action)(self, path, **action[1]):
+            self.default_action(self, path)
+
+    def connect_livereload(self, request, websocket, **params):
+        if request.path_info:
+            raise exc.HTTPNotFound()
+
+        if websocket is None:
+            raise exc.HTTPBadRequest()
+
+        websocket.received_message = partial(self.receive_livereload, websocket)
+        websocket.closed = partial(self.close_livereload, websocket)
+
+        self.websockets.add(websocket)
+
+    def receive_livereload(self, websocket, message):
+        command = json.loads(message.data)
+
+        if command['command'] == 'hello':
+            response = {
+                'command': 'hello',
+                'protocols': ['http://livereload.com/protocols/official-7'],
+                'serverName': 'nagare-livereload',
+            }
+            websocket.send(json.dumps(response))
+
+        if (command['command'] == 'info') and self.first_request:
+            self.reload_document()
+
+    def broadcast_livereload(self, command):
+        '''
+        reload:
+          path
+          liveCSS: (ref = message.liveCSS) != null ? ref : true,
+          liveImg: (ref1 = message.liveImg) != null ? ref1 : true,
+          reloadMissingCSS: (ref2 = message.reloadMissingCSS) != null ? ref2 : true,
+          originalPath: message.originalPath || '',
+          overrideURL: message.overrideURL || '',
+          serverURL: "http://" + this.options.host + ":" + this.options.port
+
+        alert:
+          message
+        '''
+        message = json.dumps(command)
+        for websocket in self.websockets:
+            websocket.send(message)
+
+    def close_livereload(self, websocket, code=None, reason=None):
+        del websocket.received_message
+        del websocket.closed
+        self.websockets.remove(websocket)
+
+    def reload_asset(self, path):
+        self.broadcast_livereload({'command': 'reload', 'path': path})
+
+    def reload_document(self):
+        self.reload_asset('')
+
+    def start(self, reload_action):
+        self.reload = reload_action
+
+        self.dir_observer.start()
+        self.file_observer.start()
+
+        if self.statics is not None:
+            self.statics.register('/livereload', self.connect_livereload)
+
+    def handle_request(self, chain, **params):
+        self.first_request = False
+        return chain.next(**params)
