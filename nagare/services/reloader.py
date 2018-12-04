@@ -167,6 +167,10 @@ class Reloader(plugin.Plugin):
         if self.statics is not None:
             self.statics.register('/livereload', self.connect_livereload)
 
-    def handle_request(self, chain, **params):
+    def handle_request(self, chain, renderer=None, **params):
         self.first_request = False
+
+        if renderer is not None:
+            renderer.head.javascript_url('/static/nagare/livereload.js')
+
         return chain.next(**params)
