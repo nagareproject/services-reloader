@@ -10,6 +10,7 @@
 import os
 import sys
 import json
+import random
 import signal
 import platform
 import subprocess
@@ -33,15 +34,26 @@ class Reloader(plugin.Plugin):
 
     CONFIG_SPEC = dict(
         plugin.Plugin.CONFIG_SPEC,
-        live='boolean(default=True)'
+        live='boolean(default=True)',
+        min_connection_delay='integer(default=500)',
+        max_connection_delay='integer(default=500)',
+        animation='integer(default=150)'
     )
 
-    def __init__(self, name, dist, live, statics_service=None):
+    def __init__(
+        self,
+        name, dist,
+        live, min_connection_delay, max_connection_delay, animation,
+        statics_service=None
+    ):
         """Initialization
         """
         plugin.Plugin.__init__(self, name, dist)
 
         self.live = live
+        self.min_connection_delay = min_connection_delay
+        self.max_connection_delay = max_connection_delay
+        self.animation = animation
         self.statics = statics_service
 
         self.dir_observer = Observer()
@@ -52,8 +64,8 @@ class Reloader(plugin.Plugin):
         self.file_dispatcher = Dispatch(self.file_dispatch)
 
         self.websockets = set()
-        self.first_request = True
-        self.reload = None
+        self.reload = lambda self, path: None
+        self.version = random.randint(10000000, 99999999)
 
     def monitor(self, reload_action):
         if 'nagare_reloaded' in os.environ:
@@ -135,8 +147,11 @@ class Reloader(plugin.Plugin):
             }
             websocket.send(json.dumps(response))
 
-        if (command['command'] == 'info') and self.first_request:
-            self.reload_document()
+            if command['extver'] != self.version:
+                self.reload_document()
+
+        if command['command'] == 'info':
+            pass
 
     def broadcast_livereload(self, command):
         '''
@@ -183,9 +198,15 @@ class Reloader(plugin.Plugin):
             self.statics.register('/livereload', self.connect_livereload)
 
     def handle_request(self, chain, renderer=None, **params):
-        self.first_request = False
-
         if self.live and (renderer is not None):
-            renderer.head.javascript_url('/static/nagare-reloader/livereload.js')
+            query = (
+                'mindelay=%d' % self.min_connection_delay,
+                'maxdelay=%d' % self.max_connection_delay,
+                'extver=%d' % self.version
+            )
+
+            if self.animation:
+                renderer.head.css('livereload', 'html * { transition: all %dms ease-out }' % self.animation)
+            renderer.head.javascript_url('/static/nagare-reloader/livereload.js?' + '&'.join(query))
 
         return chain.next(**params)
