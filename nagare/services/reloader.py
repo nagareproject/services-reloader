@@ -15,6 +15,7 @@ import platform
 import subprocess
 from functools import partial
 
+import pkg_resources
 from webob import exc
 from watchdog.observers import Observer
 
@@ -29,10 +30,18 @@ class Dispatch(object):
 class Reloader(plugin.Plugin):
     """Reload on source changes
     """
-    def __init__(self, name, dist, statics_service=None):
+
+    CONFIG_SPEC = dict(
+        plugin.Plugin.CONFIG_SPEC,
+        live='boolean(default=True)'
+    )
+
+    def __init__(self, name, dist, live, statics_service=None):
         """Initialization
         """
         plugin.Plugin.__init__(self, name, dist)
+
+        self.live = live
         self.statics = statics_service
 
         self.dir_observer = Observer()
@@ -164,13 +173,19 @@ class Reloader(plugin.Plugin):
         self.dir_observer.start()
         self.file_observer.start()
 
-        if self.statics is not None:
+        if self.live and (self.statics is not None):
+            nagare = pkg_resources.Requirement.parse('nagare-services-reloader')
+            self.statics.register_static(
+                '/static/nagare-reloader',
+                pkg_resources.resource_filename(nagare, 'nagare/static')
+            )
+
             self.statics.register('/livereload', self.connect_livereload)
 
     def handle_request(self, chain, renderer=None, **params):
         self.first_request = False
 
-        if renderer is not None:
-            renderer.head.javascript_url('/static/nagare/livereload.js')
+        if self.live and (renderer is not None):
+            renderer.head.javascript_url('/static/nagare-reloader/livereload.js')
 
         return chain.next(**params)
