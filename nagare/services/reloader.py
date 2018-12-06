@@ -65,7 +65,7 @@ class Reloader(plugin.Plugin):
 
         self.websockets = set()
         self.reload = lambda self, path: None
-        self.version = random.randint(10000000, 99999999)
+        self.version = 0
 
     def monitor(self, reload_action):
         if 'nagare_reloaded' in os.environ:
@@ -154,19 +154,6 @@ class Reloader(plugin.Plugin):
             pass
 
     def broadcast_livereload(self, command):
-        '''
-        reload:
-          path
-          liveCSS: (ref = message.liveCSS) != null ? ref : true,
-          liveImg: (ref1 = message.liveImg) != null ? ref1 : true,
-          reloadMissingCSS: (ref2 = message.reloadMissingCSS) != null ? ref2 : true,
-          originalPath: message.originalPath || '',
-          overrideURL: message.overrideURL || '',
-          serverURL: "http://" + this.options.host + ":" + this.options.port
-
-        alert:
-          message
-        '''
         message = json.dumps(command)
         for websocket in self.websockets:
             websocket.send(message)
@@ -175,6 +162,9 @@ class Reloader(plugin.Plugin):
         del websocket.received_message
         del websocket.closed
         self.websockets.remove(websocket)
+
+    def alert(self, message):
+        self.broadcast_livereload({'command': 'alert', 'message': message})
 
     def reload_asset(self, path):
         self.broadcast_livereload({'command': 'reload', 'path': path})
@@ -187,6 +177,8 @@ class Reloader(plugin.Plugin):
 
         self.dir_observer.start()
         self.file_observer.start()
+
+        self.version = random.randint(10000000, 99999999)
 
         if self.live and (self.statics is not None):
             nagare = pkg_resources.Requirement.parse('nagare-services-reloader')
