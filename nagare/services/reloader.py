@@ -201,4 +201,4 @@ class Reloader(plugin.Plugin):
                 renderer.head.css('livereload', 'html * { transition: all %dms ease-out }' % self.animation)
             renderer.head.javascript_url('/static/nagare-reloader/livereload.js?' + '&'.join(query))
 
-        return chain.next(**params)
+        return chain.next(renderer=renderer, **params)
