@@ -182,7 +182,7 @@ class Reloader(plugin.Plugin):
 
         if self.live and (self.statics is not None):
             nagare = pkg_resources.Requirement.parse('nagare-services-reloader')
-            self.statics.register_static(
+            self.statics.register_dir(
                 '/static/nagare-reloader',
                 pkg_resources.resource_filename(nagare, 'nagare/static')
             )
