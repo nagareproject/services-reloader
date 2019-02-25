@@ -43,7 +43,7 @@ class Reloader(plugin.Plugin):
         self,
         name, dist,
         live, min_connection_delay, max_connection_delay, animation,
-        statics_service=None
+        services_service, statics_service=None
     ):
         """Initialization
         """
@@ -55,6 +55,7 @@ class Reloader(plugin.Plugin):
         self.min_connection_delay = min_connection_delay
         self.max_connection_delay = max_connection_delay
         self.animation = animation
+        self.services_to_reload = services_service.reload_handlers
         self.statics = statics_service
 
         self.dir_observer = Observer()
@@ -70,7 +71,7 @@ class Reloader(plugin.Plugin):
 
     @property
     def activated(self):
-        return 'nagare_reloaded' in os.environ
+        return 'nagare.reloaded' in os.environ
 
     def monitor(self, reload_action):
         if self.activated:
@@ -79,11 +80,16 @@ class Reloader(plugin.Plugin):
 
         exit_code = 3
 
+        nb_reload = 0
+
         while exit_code == 3:
+            nb_reload += 1
             # args = [_quote_first_command_arg(sys.executable)] + sys.argv
             args = [sys.executable] + sys.argv
+
             environ = os.environ.copy()
-            environ['nagare_reloaded'] = 'True'
+            environ['nagare.reloaded'] = '1'
+            environ['nagare.reload'] = str(nb_reload)
 
             proc = None
             try:
@@ -121,6 +127,9 @@ class Reloader(plugin.Plugin):
     def default_action(self, _, path):
         if self.reload is not None:
             print('Reloading: %s modified' % path)
+            for service in self.services_to_reload:
+                service.handle_reload()
+
             self.reload(self, path)
 
     def dir_dispatch(self, event):
