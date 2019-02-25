@@ -29,6 +29,8 @@ setup(
     keywords='',
     url='https://github.com/nagareproject/services-reloader',
     packages=find_packages(),
+    include_package_data=True,
+    package_data={'': ['nagare/static/*']},
     zip_safe=False,
     setup_requires=['setuptools_scm'],
     use_scm_version=True,

@@ -16,7 +16,6 @@ import platform
 import subprocess
 from functools import partial
 
-import pkg_resources
 from webob import exc
 from watchdog.observers import Observer
 
@@ -50,6 +49,8 @@ class Reloader(plugin.Plugin):
         """
         plugin.Plugin.__init__(self, name, dist)
 
+        self.static = os.path.join(dist.location, 'nagare', 'static')
+
         self.live = live
         self.min_connection_delay = min_connection_delay
         self.max_connection_delay = max_connection_delay
@@ -67,8 +68,12 @@ class Reloader(plugin.Plugin):
         self.reload = lambda self, path: None
         self.version = 0
 
+    @property
+    def activated(self):
+        return 'nagare_reloaded' in os.environ
+
     def monitor(self, reload_action):
-        if 'nagare_reloaded' in os.environ:
+        if self.activated:
             self.start(reload_action)
             return 0
 
@@ -95,16 +100,23 @@ class Reloader(plugin.Plugin):
         return exit_code
 
     def watch_dir(self, dirname, action=None, recursive=False, **kw):
-        self.dir_actions.append((dirname + os.path.sep, action, kw))
-        self.dir_actions.sort(key=lambda a: len(a[0]), reverse=True)
-        self.dir_observer.schedule(self.dir_dispatcher, os.path.abspath(dirname), recursive)
+        abs_dirname = os.path.abspath(dirname)
+        if os.path.isdir(abs_dirname):
+            self.dir_actions.append((dirname + os.path.sep, action, kw))
+            self.dir_actions.sort(key=lambda a: len(a[0]), reverse=True)
+            self.dir_observer.schedule(self.dir_dispatcher, abs_dirname, recursive)
+        else:
+            self.logger.warn("Directory `{}` doesn't exist".format(abs_dirname))
 
     def watch_file(self, filename, action=None, **kw):
         filename = os.path.abspath(filename)
-        dirname = os.path.dirname(filename)
+        if os.path.isfile(filename):
+            dirname = os.path.dirname(filename)
 
-        self.file_actions[filename] = (action, kw)
-        self.file_observer.schedule(self.file_dispatcher, dirname,)
+            self.file_actions[filename] = (action, kw)
+            self.file_observer.schedule(self.file_dispatcher, dirname,)
+        else:
+            self.logger.warn("File `{}` doesn't exist".format(filename))
 
     def default_action(self, _, path):
         if self.reload is not None:
@@ -181,12 +193,7 @@ class Reloader(plugin.Plugin):
         self.version = random.randint(10000000, 99999999)
 
         if self.live and (self.statics is not None):
-            nagare = pkg_resources.Requirement.parse('nagare-services-reloader')
-            self.statics.register_dir(
-                '/static/nagare-reloader',
-                pkg_resources.resource_filename(nagare, 'nagare/static')
-            )
-
+            self.statics.register_dir('/static/nagare-reloader', self.static)
             self.statics.register('/livereload', self.connect_livereload)
 
     def handle_request(self, chain, renderer=None, **params):
