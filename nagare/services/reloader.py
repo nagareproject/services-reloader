@@ -11,8 +11,6 @@ import os
 import sys
 import json
 import random
-import signal
-import platform
 import subprocess
 from functools import partial
 
@@ -100,8 +98,8 @@ class Reloader(plugin.Plugin):
             except KeyboardInterrupt:
                 exit_code = 1
             finally:
-                if (proc is not None) and hasattr(os, 'kill') and (platform.system() != 'Windows'):
-                    os.kill(proc.pid, signal.SIGTERM)
+                if proc is not None:
+                    proc.terminate()
 
         return exit_code
 
@@ -205,16 +203,18 @@ class Reloader(plugin.Plugin):
             self.statics.register_dir('/static/nagare-reloader', self.static)
             self.statics.register('/livereload', self.connect_livereload)
 
-    def handle_request(self, chain, renderer=None, **params):
-        if self.live and (renderer is not None):
-            query = (
-                'mindelay=%d' % self.min_connection_delay,
-                'maxdelay=%d' % self.max_connection_delay,
-                'extver=%d' % self.version
-            )
+    def handle_request(self, chain, **params):
+        renderer = params.get('renderer')
+        if renderer is not None:
+            if self.live:
+                query = (
+                    'mindelay=%d' % self.min_connection_delay,
+                    'maxdelay=%d' % self.max_connection_delay,
+                    'extver=%d' % self.version
+                )
 
-            if self.animation:
-                renderer.head.css('livereload', 'html * { transition: all %dms ease-out }' % self.animation)
-            renderer.head.javascript_url('/static/nagare-reloader/livereload.js?' + '&'.join(query))
+                if self.animation:
+                    renderer.head.css('livereload', 'html * { transition: all %dms ease-out }' % self.animation)
+                renderer.head.javascript_url('/static/nagare-reloader/livereload.js?' + '&'.join(query))
 
-        return chain.next(renderer=renderer, **params)
+        return chain.next(**params)
