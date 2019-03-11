@@ -69,7 +69,7 @@ class Reloader(plugin.Plugin):
 
     @property
     def activated(self):
-        return 'nagare.reloaded' in os.environ
+        return 'nagare.reload' in os.environ
 
     def monitor(self, reload_action):
         if self.activated:
@@ -86,7 +86,6 @@ class Reloader(plugin.Plugin):
             args = [sys.executable] + sys.argv
 
             environ = os.environ.copy()
-            environ['nagare.reloaded'] = '1'
             environ['nagare.reload'] = str(nb_reload)
 
             proc = None
