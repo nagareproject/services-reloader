@@ -14,6 +14,11 @@ import random
 import subprocess
 from functools import partial
 
+try:
+    from urllib.parse import urlencode
+except ImportError:
+    from urllib import urlencode
+
 from webob import exc
 from watchdog.observers import Observer
 
@@ -21,6 +26,7 @@ from nagare.services import plugin
 
 
 class Dispatch(object):
+
     def __init__(self, dispatch):
         self.dispatch = dispatch
 
@@ -28,7 +34,6 @@ class Dispatch(object):
 class Reloader(plugin.Plugin):
     """Reload on source changes
     """
-
     CONFIG_SPEC = dict(
         plugin.Plugin.CONFIG_SPEC,
         live='boolean(default=True)',
@@ -36,6 +41,7 @@ class Reloader(plugin.Plugin):
         max_connection_delay='integer(default=500)',
         animation='integer(default=150)'
     )
+    WEBSOCKET_URL = 'nagare/services/reloader'
 
     def __init__(
         self,
@@ -76,9 +82,8 @@ class Reloader(plugin.Plugin):
             self.start(reload_action)
             return 0
 
-        exit_code = 3
-
         nb_reload = 0
+        exit_code = 3
 
         while exit_code == 3:
             nb_reload += 1
@@ -200,20 +205,22 @@ class Reloader(plugin.Plugin):
 
         if self.live and (self.statics is not None):
             self.statics.register_dir('/static/nagare-reloader', self.static)
-            self.statics.register('/livereload', self.connect_livereload)
+            self.statics.register(self.WEBSOCKET_URL, self.connect_livereload)
 
     def handle_request(self, chain, **params):
         renderer = params.get('renderer')
         if renderer is not None:
             if self.live:
-                query = (
-                    'mindelay=%d' % self.min_connection_delay,
-                    'maxdelay=%d' % self.max_connection_delay,
-                    'extver=%d' % self.version
-                )
+                query = {
+                    'path': self.WEBSOCKET_URL,
+                    'mindelay': str(self.min_connection_delay),
+                    'maxdelay': str(self.max_connection_delay),
+                    'extver': str(self.version)
+                }
+
+                renderer.head.javascript_url('/static/nagare-reloader/livereload.js?' + urlencode(query))
 
                 if self.animation:
                     renderer.head.css('livereload', 'html * { transition: all %dms ease-out }' % self.animation)
-                renderer.head.javascript_url('/static/nagare-reloader/livereload.js?' + '&'.join(query))
 
         return chain.next(**params)
