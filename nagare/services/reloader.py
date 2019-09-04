@@ -108,21 +108,21 @@ class Reloader(plugin.Plugin):
         return exit_code
 
     def watch_dir(self, dirname, action=None, recursive=False, **kw):
-        abs_dirname = os.path.abspath(dirname)
+        abs_dirname = os.path.abspath(dirname) + os.path.sep
         if os.path.isdir(abs_dirname):
-            self.dir_actions.append((dirname + os.path.sep, action, kw))
-            self.dir_actions.sort(key=lambda a: len(a[0]), reverse=True)
-            self.dir_observer.schedule(self.dir_dispatcher, abs_dirname, recursive)
+            if abs_dirname not in self.dir_actions:
+                self.dir_actions.append((dirname, recursive, action, kw))
+                self.dir_actions.sort(key=lambda a: len(a[0]), reverse=True)
+                self.dir_observer.schedule(self.dir_dispatcher, abs_dirname, recursive)
         else:
             self.logger.warn("Directory `{}` doesn't exist".format(abs_dirname))
 
     def watch_file(self, filename, action=None, **kw):
         filename = os.path.abspath(filename)
         if os.path.isfile(filename):
-            dirname = os.path.dirname(filename)
-
-            self.file_actions[filename] = (action, kw)
-            self.file_observer.schedule(self.file_dispatcher, dirname,)
+            if filename not in self.file_actions:
+                self.file_actions[filename] = (os.stat(filename).st_mtime, action, kw)
+                self.file_observer.schedule(self.file_dispatcher, filename)
         else:
             self.logger.warn("File `{}` doesn't exist".format(filename))
 
@@ -135,17 +135,23 @@ class Reloader(plugin.Plugin):
             self.reload(self, path)
 
     def dir_dispatch(self, event):
-        path = event.src_path
-        for dirname, action, kw in self.dir_actions:
-            if path.startswith(dirname) and (action or self.default_action)(self, path[:len(dirname)], path[len(dirname):], **kw):
-                self.default_action(self, path)
+        path = event.src_path + os.path.sep
+        for dirname, recursive, action, kw in self.dir_actions:
+            if (recursive and path.startswith(dirname)) or (path == dirname):
+                if(action or (lambda self, dirname, path, **kw: True))(self, dirname, path[len(dirname):], **kw):
+                    self.default_action(self, path)
                 break
 
     def file_dispatch(self, event):
         path = event.src_path
-        action = self.file_actions.get(path)
-        if (action is not None) and (action[0] or self.default_action)(self, path, **action[1]):
-            self.default_action(self, path)
+
+        mtime2 = os.stat(path).st_mtime
+        mtime1, action, kw = self.file_actions.get(path, (None, None, None))
+
+        if mtime1 and (mtime2 > mtime1):
+            self.file_actions[path] = (mtime2, action, kw)
+            if (action or (lambda self, path, **kw: True))(self, path, **kw):
+                self.default_action(self, path)
 
     def connect_livereload(self, request, websocket, **params):
         if request.path_info:
