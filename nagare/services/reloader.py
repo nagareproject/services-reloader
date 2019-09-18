@@ -25,10 +25,70 @@ from watchdog.observers import Observer
 from nagare.services import plugin
 
 
-class Dispatch(object):
+class DirsObserver(Observer):
 
-    def __init__(self, dispatch):
-        self.dispatch = dispatch
+    def __init__(self, default_action=lambda dirname, path, event: None):
+        super(DirsObserver, self).__init__()
+
+        self._default_action = default_action
+        self._actions = []
+
+    def schedule(self, dirname, action=None, recursive=False, **kw):
+        dirname = os.path.abspath(dirname)
+        if not os.path.isdir(dirname):
+            return False
+
+        if dirname not in [action[0] for action in self._actions]:
+            self._actions.append((dirname, recursive, action, kw))
+            self._actions.sort(key=lambda a: len(a[0]), reverse=True)
+
+            super(DirsObserver, self).schedule(self, dirname, recursive)
+
+        return True
+
+    def dispatch(self, event):
+        evt_path = event.src_path
+        evt_dirname = evt_path if event.is_directory else os.path.dirname(evt_path)
+        evt_dirname2 = evt_dirname + os.path.sep
+
+        for dirname, recursive, action, kw in self._actions:
+            dirname2 = dirname + os.path.sep
+            if (recursive and evt_dirname2.startswith(dirname2)) or (evt_dirname == dirname):
+                path = evt_path[len(dirname) + 1:]
+                if(action or (lambda self, dirname, path, event, **kw: True))(event, dirname, path, **kw):
+                    self._default_action(event, dirname, path, event)
+                break
+
+
+class FilesObserver(Observer):
+
+    def __init__(self, default_action=lambda path: None):
+        super(FilesObserver, self).__init__()
+
+        self._default_action = default_action
+        self._actions = {}
+
+    def schedule(self, filename, action=None, **kw):
+        filename = os.path.abspath(filename)
+        if not os.path.isfile(filename):
+            return False
+
+        if filename not in self._actions:
+            self._actions[filename] = (os.stat(filename).st_mtime, action, kw)
+            super(FilesObserver, self).schedule(self, os.path.dirname(filename))
+
+        return True
+
+    def dispatch(self, event):
+        path = event.src_path
+
+        mtime1, action, kw = self._actions.get(path, (None, None, None))
+        mtime2 = os.stat(path).st_mtime if not event.event_type == 'deleted' else (mtime1 + 1)
+
+        if mtime1 and (mtime2 > mtime1):
+            self._actions[path] = (mtime2, action, kw)
+            if (action or (lambda self, path, **kw: True))(event, path, **kw):
+                self._default_action(event, path)
 
 
 class Reloader(plugin.Plugin):
@@ -62,12 +122,8 @@ class Reloader(plugin.Plugin):
         self.services_to_reload = services_service.reload_handlers
         self.statics = statics_service
 
-        self.dir_observer = Observer()
-        self.dir_dispatcher = Dispatch(self.dir_dispatch)
-        self.dir_actions = []
-        self.file_observer = Observer()
-        self.file_actions = {}
-        self.file_dispatcher = Dispatch(self.file_dispatch)
+        self.dirs_observer = DirsObserver(self.default_dir_action)
+        self.files_observer = FilesObserver(self.default_file_action)
 
         self.websockets = set()
         self.reload = lambda self, path: None
@@ -108,25 +164,14 @@ class Reloader(plugin.Plugin):
         return exit_code
 
     def watch_dir(self, dirname, action=None, recursive=False, **kw):
-        abs_dirname = os.path.abspath(dirname) + os.path.sep
-        if os.path.isdir(abs_dirname):
-            if abs_dirname not in self.dir_actions:
-                self.dir_actions.append((dirname, recursive, action, kw))
-                self.dir_actions.sort(key=lambda a: len(a[0]), reverse=True)
-                self.dir_observer.schedule(self.dir_dispatcher, abs_dirname, recursive)
-        else:
-            self.logger.warn("Directory `{}` doesn't exist".format(abs_dirname))
+        if not self.dirs_observer.schedule(dirname, action, recursive, **kw):
+            self.logger.warn("Directory `{}` doesn't exist".format(dirname))
 
     def watch_file(self, filename, action=None, **kw):
-        filename = os.path.abspath(filename)
-        if os.path.isfile(filename):
-            if filename not in self.file_actions:
-                self.file_actions[filename] = (os.stat(filename).st_mtime, action, kw)
-                self.file_observer.schedule(self.file_dispatcher, filename)
-        else:
+        if not self.files_observer.schedule(filename, action, **kw):
             self.logger.warn("File `{}` doesn't exist".format(filename))
 
-    def default_action(self, _, path):
+    def default_file_action(self, event, path):
         if self.reload is not None:
             print('Reloading: %s modified' % path)
             for service in self.services_to_reload:
@@ -134,24 +179,8 @@ class Reloader(plugin.Plugin):
 
             self.reload(self, path)
 
-    def dir_dispatch(self, event):
-        path = event.src_path + os.path.sep
-        for dirname, recursive, action, kw in self.dir_actions:
-            if (recursive and path.startswith(dirname)) or (path == dirname):
-                if(action or (lambda self, dirname, path, **kw: True))(self, dirname, path[len(dirname):], **kw):
-                    self.default_action(self, path)
-                break
-
-    def file_dispatch(self, event):
-        path = event.src_path
-
-        mtime2 = os.stat(path).st_mtime
-        mtime1, action, kw = self.file_actions.get(path, (None, None, None))
-
-        if mtime1 and (mtime2 > mtime1):
-            self.file_actions[path] = (mtime2, action, kw)
-            if (action or (lambda self, path, **kw: True))(self, path, **kw):
-                self.default_action(self, path)
+    def default_dir_action(self, event, dirname, path):
+        self.default_file_action(event, os.path.join(dirname, path) if path else dirname)
 
     def connect_livereload(self, request, websocket, **params):
         if request.path_info:
@@ -204,8 +233,8 @@ class Reloader(plugin.Plugin):
     def start(self, reload_action):
         self.reload = reload_action
 
-        self.dir_observer.start()
-        self.file_observer.start()
+        self.dirs_observer.start()
+        self.files_observer.start()
 
         self.version = random.randint(10000000, 99999999)
 
