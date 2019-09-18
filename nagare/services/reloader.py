@@ -38,7 +38,7 @@ class DirsObserver(Observer):
         if not os.path.isdir(dirname):
             return False
 
-        if dirname not in [action[0] for action in self._actions]:
+        if dirname not in [callback[0] for callback in self._actions]:
             self._actions.append((dirname, recursive, action, kw))
             self._actions.sort(key=lambda a: len(a[0]), reverse=True)
 
