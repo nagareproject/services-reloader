@@ -55,7 +55,7 @@ class DirsObserver(Observer):
             dirname2 = dirname + os.path.sep
             if (recursive and evt_dirname2.startswith(dirname2)) or (evt_dirname == dirname):
                 path = evt_path[len(dirname) + 1:]
-                if(action or (lambda self, dirname, path, event, **kw: True))(event, dirname, path, **kw):
+                if(action or (lambda event, dirname, path, **kw: True))(event, dirname, path, **kw):
                     self._default_action(event, dirname, path, event)
                 break
 
