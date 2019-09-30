@@ -80,9 +80,14 @@ class FilesObserver(Observer):
         return True
 
     def dispatch(self, event):
-        path = event.src_path
+        if event.is_directory:
+            return
 
+        path = event.src_path
         mtime1, action, kw = self._actions.get(path, (None, None, None))
+        if mtime1 is None:
+            return
+
         mtime2 = os.stat(path).st_mtime if not event.event_type == 'deleted' else (mtime1 + 1)
 
         if mtime1 and (mtime2 > mtime1):
