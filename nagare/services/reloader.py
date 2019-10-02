@@ -13,6 +13,7 @@ import json
 import random
 import subprocess
 from functools import partial
+from collections import defaultdict
 
 try:
     from urllib.parse import urlencode
@@ -20,7 +21,7 @@ except ImportError:
     from urllib import urlencode
 
 from webob import exc
-from watchdog.observers import Observer
+from watchdog_gevent import Observer
 
 from nagare.services import plugin
 
@@ -66,34 +67,36 @@ class FilesObserver(Observer):
         super(FilesObserver, self).__init__()
 
         self._default_action = default_action
-        self._actions = {}
+        self._dirs = defaultdict(list)
 
     def schedule(self, filename, action=None, **kw):
         filename = os.path.abspath(filename)
         if not os.path.isfile(filename):
             return False
 
-        if filename not in self._actions:
-            self._actions[filename] = (os.stat(filename).st_mtime, action, kw)
-            super(FilesObserver, self).schedule(self, os.path.dirname(filename))
+        dirname = os.path.dirname(filename)
+        self._dirs[dirname].append([os.path.basename(filename), os.stat(filename).st_mtime, action, kw])
+        super(FilesObserver, self).schedule(self, dirname)
 
         return True
 
     def dispatch(self, event):
-        if event.is_directory:
-            return
+        dirname = event.src_path if event.is_directory else os.path.dirname(event.src_path)
 
-        path = event.src_path
-        mtime1, action, kw = self._actions.get(path, (None, None, None))
-        if mtime1 is None:
-            return
+        for file_infos in self._dirs[dirname]:
+            filename, mtime1, action, kw = file_infos
+            path = os.path.join(dirname, filename)
+            if not os.path.isfile(path):
+                continue
 
-        mtime2 = os.stat(path).st_mtime if not event.event_type == 'deleted' else (mtime1 + 1)
+            mtime2 = os.stat(path).st_mtime
+            if mtime2 > mtime1:
+                file_infos[1] = mtime2
 
-        if mtime1 and (mtime2 > mtime1):
-            self._actions[path] = (mtime2, action, kw)
-            if (action or (lambda self, path, **kw: True))(event, path, **kw):
-                self._default_action(event, path)
+                if (action or (lambda self, path, **kw: True))(event, path, **kw):
+                    self._default_action(event, path)
+
+                break
 
 
 class Reloader(plugin.Plugin):

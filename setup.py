@@ -34,7 +34,7 @@ setup(
     zip_safe=False,
     setup_requires=['setuptools_scm'],
     use_scm_version=True,
-    install_requires=['watchdog', 'webob', 'nagare-server'],
+    install_requires=['watchdog', 'watchdog_gevent', 'webob', 'nagare-server'],
     entry_points='''
         [nagare.services]
         reloader = nagare.services.reloader:Reloader
