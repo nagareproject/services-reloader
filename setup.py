@@ -19,6 +19,13 @@ here = path.normpath(path.dirname(__file__))
 with open(path.join(here, 'README.rst')) as long_description:
     LONG_DESCRIPTION = long_description.read()
 
+install_requires = ['watchdog', 'webob', 'nagare-server']
+try:
+    import gevent  # noqa: F401
+    install_requires += ['watchdog_gevent']
+except ImportError:
+    pass
+
 setup(
     name='nagare-services-reloader',
     author='Net-ng',
@@ -34,7 +41,7 @@ setup(
     zip_safe=False,
     setup_requires=['setuptools_scm'],
     use_scm_version=True,
-    install_requires=['watchdog', 'watchdog_gevent', 'webob', 'nagare-server'],
+    install_requires=install_requires,
     entry_points='''
         [nagare.services]
         reloader = nagare.services.reloader:Reloader

@@ -20,9 +20,12 @@ try:
 except ImportError:
     from urllib import urlencode
 
-from webob import exc
-from watchdog_gevent import Observer
+try:
+    from watchdog_gevent import Observer
+except ImportError:
+    from watchdog.observers import Observer
 
+from webob import exc
 from nagare.services import plugin
 
 
