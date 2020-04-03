@@ -1,5 +1,5 @@
 # --
-# Copyright (c) 2008-2019 Net-ng.
+# Copyright (c) 2008-2020 Net-ng.
 # All rights reserved.
 #
 # This software is licensed under the BSD License, as described in
@@ -118,11 +118,17 @@ class Reloader(plugin.Plugin):
         self,
         name, dist,
         live, min_connection_delay, max_connection_delay, animation,
-        services_service, statics_service=None
+        services_service, statics_service=None,
+        **config
     ):
         """Initialization
         """
-        plugin.Plugin.__init__(self, name, dist)
+        plugin.Plugin.__init__(
+            self, name, dist,
+            live=live, animation=animation,
+            min_connection_delay=min_connection_delay, max_connection_delay=max_connection_delay,
+            **config
+        )
 
         self.static = os.path.join(dist.location, 'nagare', 'static')
 
