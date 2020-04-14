@@ -59,8 +59,8 @@ class DirsObserver(Observer):
             dirname2 = dirname + os.path.sep
             if (recursive and evt_dirname2.startswith(dirname2)) or (evt_dirname == dirname):
                 path = evt_path[len(dirname) + 1:]
-                if(action or (lambda event, dirname, path, **kw: True))(event, dirname, path, **kw):
-                    self._default_action(event, dirname, path, event)
+                if not action or action(event, dirname, path, **kw):
+                    self._default_action(event, dirname, path, event, not action)
                 break
 
 
@@ -96,8 +96,8 @@ class FilesObserver(Observer):
             if mtime2 > mtime1:
                 file_infos[1] = mtime2
 
-                if (action or (lambda self, path, **kw: True))(event, path, **kw):
-                    self._default_action(event, path)
+                if not action or action(event, path, **kw):
+                    self._default_action(event, path, not action)
 
                 break
 
@@ -160,7 +160,6 @@ class Reloader(plugin.Plugin):
 
         while exit_code == 3:
             nb_reload += 1
-            # args = [_quote_first_command_arg(sys.executable)] + sys.argv
             args = [sys.executable] + sys.argv
 
             environ = os.environ.copy()
@@ -168,7 +167,6 @@ class Reloader(plugin.Plugin):
 
             proc = None
             try:
-                # _turn_sigterm_into_systemexit()
                 proc = subprocess.Popen(args, env=environ)
                 exit_code = proc.wait()
                 proc = None
@@ -188,8 +186,8 @@ class Reloader(plugin.Plugin):
         if not self.files_observer.schedule(filename, action, **kw):
             self.logger.warn("File `{}` doesn't exist".format(filename))
 
-    def default_file_action(self, event, path):
-        if self.reload is not None:
+    def default_file_action(self, event, path, only_on_modified=False):
+        if (self.reload is not None) and (not only_on_modified or (event.event_type == 'modified')):
             print('Reloading: %s modified' % path)
             for service in self.services_to_reload:
                 service.handle_reload()
