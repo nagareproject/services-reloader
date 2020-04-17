@@ -257,9 +257,9 @@ class Reloader(plugin.Plugin):
             self.statics.register_dir('/static/nagare-reloader', self.static)
             self.statics.register(self.WEBSOCKET_URL, self.connect_livereload)
 
-    def handle_request(self, chain, **params):
+    def handle_request(self, chain, request, **params):
         renderer = params.get('renderer')
-        if renderer is not None:
+        if not request.is_xhr and (renderer is not None):
             if self.live:
                 query = {
                     'path': self.WEBSOCKET_URL,
@@ -273,4 +273,4 @@ class Reloader(plugin.Plugin):
                 if self.animation:
                     renderer.head.css('livereload', 'html * { transition: all %dms ease-out }' % self.animation)
 
-        return chain.next(**params)
+        return chain.next(request=request, **params)
