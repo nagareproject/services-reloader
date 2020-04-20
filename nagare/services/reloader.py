@@ -10,6 +10,7 @@
 import os
 import sys
 import json
+import string
 import random
 import subprocess
 from functools import partial
@@ -105,6 +106,7 @@ class FilesObserver(Observer):
 class Reloader(plugin.Plugin):
     """Reload on source changes
     """
+    LOAD_PRIORITY = 24
     CONFIG_SPEC = dict(
         plugin.Plugin.CONFIG_SPEC,
         live='boolean(default=True)',
@@ -118,7 +120,7 @@ class Reloader(plugin.Plugin):
         self,
         name, dist,
         live, min_connection_delay, max_connection_delay, animation,
-        services_service, statics_service=None,
+        services_service,
         **config
     ):
         """Initialization
@@ -133,11 +135,7 @@ class Reloader(plugin.Plugin):
         self.static = os.path.join(dist.location, 'nagare', 'static')
 
         self.live = live
-        self.min_connection_delay = min_connection_delay
-        self.max_connection_delay = max_connection_delay
-        self.animation = animation
         self.services_to_reload = services_service.reload_handlers
-        self.statics = statics_service
 
         self.dirs_observer = DirsObserver(self.default_dir_action)
         self.files_observer = FilesObserver(self.default_file_action)
@@ -146,13 +144,25 @@ class Reloader(plugin.Plugin):
         self.reload = lambda self, path: None
         self.version = 0
 
+        if self.live:
+            self.query = {
+                'path': self.WEBSOCKET_URL,
+                'mindelay': str(min_connection_delay),
+                'maxdelay': str(max_connection_delay)
+            }
+
+            self.head = b'<script type="text/javascript" src="/static/nagare-reloader/livereload.js?%s"></script>'
+
+            if animation:
+                self.head += b'<style type="text/css">html * { transition: all %dms ease-out }</style>' % animation
+
     @property
     def activated(self):
         return 'nagare.reload' in os.environ
 
-    def monitor(self, reload_action):
+    def monitor(self, reload_action, services_service):
         if self.activated:
-            self.start(reload_action)
+            services_service(self.start, reload_action)
             return 0
 
         nb_reload = 0
@@ -245,7 +255,7 @@ class Reloader(plugin.Plugin):
     def reload_document(self):
         self.reload_asset('')
 
-    def start(self, reload_action):
+    def start(self, reload_action, statics_service=None):
         self.reload = reload_action
 
         self.dirs_observer.start()
@@ -253,24 +263,47 @@ class Reloader(plugin.Plugin):
 
         self.version = random.randint(10000000, 99999999)
 
-        if self.live and (self.statics is not None):
-            self.statics.register_dir('/static/nagare-reloader', self.static)
-            self.statics.register(self.WEBSOCKET_URL, self.connect_livereload)
+        if self.live and (statics_service is not None):
+            statics_service.register_dir('/static/nagare-reloader', self.static)
+            statics_service.register(self.WEBSOCKET_URL, self.connect_livereload)
 
-    def handle_request(self, chain, request, **params):
-        renderer = params.get('renderer')
-        if not request.is_xhr and (renderer is not None):
-            if self.live:
-                query = {
-                    'path': self.WEBSOCKET_URL,
-                    'mindelay': str(self.min_connection_delay),
-                    'maxdelay': str(self.max_connection_delay),
-                    'extver': str(self.version)
-                }
+    def generate_body(self, body):
+        head, tag, content = body.partition(b'</head>')
+        if content:
+            query = urlencode(dict(self.query, extver=str(self.version)))
+            body = b''.join([head, self.head % query.encode('ascii'), tag, content])
 
-                renderer.head.javascript_url('/static/nagare-reloader/livereload.js?' + urlencode(query))
+        return body
 
-                if self.animation:
-                    renderer.head.css('livereload', 'html * { transition: all %dms ease-out }' % self.animation)
+    def generate_response(self, start_response, status, headers, body):
+        headers = dict(headers)
+        content_type = headers.get('Content-Type')
+        if content_type and content_type.startswith('text/html'):
+            body = self.generate_body(body)
+            headers['Content-Length'] = str(len(body))
 
-        return chain.next(request=request, **params)
+        start_response(status, headers.items())(body)
+
+    def generate_exception(self, response):
+        body = response.html_template_obj.template
+        body = self.generate_body(body.encode('utf-8'))
+        response.html_template_obj = string.Template(body.decode('utf-8'))
+
+        return response
+
+    def handle_request(self, chain, start_response=None, **params):
+        if not self.live or not start_response:
+            return chain.next(start_response=start_response, **params)
+
+        if not params['request'].is_xhr:
+            start_response = partial(partial, self.generate_response, start_response)
+
+        try:
+            response = chain.next(start_response=start_response, **params)
+
+            if isinstance(response, exc.WSGIHTTPException):
+                response = self.generate_exception(response)
+        except exc.WSGIHTTPException as response:
+            raise self.generate_exception(response)
+
+        return response
