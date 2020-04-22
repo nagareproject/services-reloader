@@ -26,7 +26,7 @@ try:
 except ImportError:
     from watchdog.observers import Observer
 
-from webob import exc
+from webob import multidict, exc
 from nagare.services import plugin
 
 
@@ -276,13 +276,13 @@ class Reloader(plugin.Plugin):
         return body
 
     def generate_response(self, start_response, status, headers, body):
-        headers = dict(headers)
+        headers = multidict.MultiDict(headers)
         content_type = headers.get('Content-Type')
         if content_type and content_type.startswith('text/html'):
             body = self.generate_body(body)
             headers['Content-Length'] = str(len(body))
 
-        start_response(status, headers.items())(body)
+        start_response(status, headers.iteritems())(body)
 
     def generate_exception(self, response):
         body = response.html_template_obj.template
