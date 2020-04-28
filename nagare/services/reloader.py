@@ -282,7 +282,7 @@ class Reloader(plugin.Plugin):
             body = self.generate_body(body)
             headers['Content-Length'] = str(len(body))
 
-        start_response(status, headers.iteritems())(body)
+        start_response(status, list(headers.iteritems()))(body)
 
     def generate_exception(self, response):
         body = response.html_template_obj.template
