@@ -114,7 +114,7 @@ class Reloader(plugin.Plugin):
         max_connection_delay='integer(default=500)',
         animation='integer(default=150)'
     )
-    WEBSOCKET_URL = 'nagare/services/reloader'
+    WEBSOCKET_URL = '/nagare/reloader/'
 
     def __init__(
         self,
@@ -145,16 +145,12 @@ class Reloader(plugin.Plugin):
         self.version = 0
 
         if self.live:
-            self.query = {
-                'path': self.WEBSOCKET_URL,
-                'mindelay': str(min_connection_delay),
-                'maxdelay': str(max_connection_delay)
-            }
-
-            self.head = b'<script type="text/javascript" src="/static/nagare-reloader/livereload.js?%s"></script>'
+            self.query = {'mindelay': str(min_connection_delay), 'maxdelay': str(max_connection_delay)}
 
             if animation:
-                self.head += b'<style type="text/css">html * { transition: all %dms ease-out }</style>' % animation
+                self.head = b'<style type="text/css">html * { transition: all %dms ease-out }</style>' % animation
+            else:
+                self.head = b''
 
     @property
     def activated(self):
@@ -208,7 +204,7 @@ class Reloader(plugin.Plugin):
         self.default_file_action(event, os.path.join(dirname, path) if path else dirname)
 
     def connect_livereload(self, request, websocket, **params):
-        if request.path_info:
+        if request.path_info.rstrip('/'):
             raise exc.HTTPNotFound()
 
         if websocket is None:
@@ -263,9 +259,15 @@ class Reloader(plugin.Plugin):
 
         self.version = random.randint(10000000, 99999999)
 
+    def handle_start(self, app, statics_service=None):
         if self.live and (statics_service is not None):
-            statics_service.register_dir('/static/nagare-reloader', self.static)
-            statics_service.register(self.WEBSOCKET_URL, self.connect_livereload)
+            static_url = app.static_url + '/nagare/reloader'
+            self.head += b'<script type="text/javascript" src="%s/livereload.js?%%s"></script>' % static_url.encode('ascii')
+            statics_service.register_dir(static_url, self.static)
+
+            websocket_url = app.service_url + self.WEBSOCKET_URL
+            self.query['path'] = websocket_url.lstrip('/')
+            statics_service.register_ws(websocket_url, self.connect_livereload)
 
     def generate_body(self, body):
         head, tag, content = body.partition(b'</head>')
