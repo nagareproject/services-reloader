@@ -17,11 +17,6 @@ from functools import partial
 from collections import defaultdict
 
 try:
-    from urllib.parse import urlencode
-except ImportError:
-    from urllib import urlencode
-
-try:
     from watchdog_gevent import Observer
 except ImportError:
     from watchdog.observers import Observer
@@ -272,7 +267,7 @@ class Reloader(plugin.Plugin):
     def generate_body(self, body):
         head, tag, content = body.partition(b'</head>')
         if content:
-            query = urlencode(dict(self.query, extver=str(self.version)))
+            query = '&'.join(k + '=' + v for k, v in self.query.items()) + '&extver=' + str(self.version)
             body = b''.join([head, self.head % query.encode('ascii'), tag, content])
 
         return body
