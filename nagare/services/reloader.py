@@ -18,8 +18,10 @@ from collections import defaultdict
 
 try:
     from watchdog_gevent import Observer
+    gevent = True
 except ImportError:
     from watchdog.observers import Observer
+    gevent = False
 
 from webob import multidict, exc
 from nagare.services import plugin
@@ -66,36 +68,43 @@ class FilesObserver(Observer):
         super(FilesObserver, self).__init__()
 
         self._default_action = default_action
-        self._dirs = defaultdict(list)
+        self._dirs = defaultdict(dict)
 
     def schedule(self, filename, action=None, **kw):
+        global gevent
+
         filename = os.path.abspath(filename)
         if not os.path.isfile(filename):
             return False
 
         dirname = os.path.dirname(filename)
-        self._dirs[dirname].append([os.path.basename(filename), os.stat(filename).st_mtime, action, kw])
-        super(FilesObserver, self).schedule(self, dirname)
+        basename = os.path.basename(filename)
+        self._dirs[dirname][basename] = [os.stat(filename).st_mtime, action, kw]
+
+        super(FilesObserver, self).schedule(self, filename if gevent else dirname)
 
         return True
 
     def dispatch(self, event):
-        dirname = event.src_path if event.is_directory else os.path.dirname(event.src_path)
+        if event.is_directory:
+            return
 
-        for file_infos in self._dirs[dirname]:
-            filename, mtime1, action, kw = file_infos
-            path = os.path.join(dirname, filename)
-            if not os.path.isfile(path):
-                continue
+        filename = event.src_path
+        dirname = os.path.dirname(filename)
+        basename = os.path.basename(filename)
 
-            mtime2 = os.stat(path).st_mtime
-            if mtime2 > mtime1:
-                file_infos[1] = mtime2
+        file_infos = self._dirs[dirname].get(basename)
+        if not file_infos:
+            return
 
-                if not action or action(event, path, **kw):
-                    self._default_action(event, path, not action)
+        mtime1, action, kw = file_infos
+        mtime2 = os.stat(filename).st_mtime
+        if mtime2 > mtime1:
+            if event.event_type != 'deleted':
+                file_infos[0] = mtime2
 
-                break
+            if not action or action(event, filename, **kw):
+                self._default_action(event, filename, not action)
 
 
 class Reloader(plugin.Plugin):
@@ -188,7 +197,7 @@ class Reloader(plugin.Plugin):
             self.logger.warn("File `{}` doesn't exist".format(filename))
 
     def default_file_action(self, event, path, only_on_modified=False):
-        if (self.reload is not None) and (not only_on_modified or (event.event_type == 'modified')):
+        if (self.reload is not None) and (not only_on_modified or (event.event_type in ('created', 'modified'))):
             print('Reloading: %s modified' % path)
             for service in self.services_to_reload:
                 service.handle_reload()
@@ -289,7 +298,10 @@ class Reloader(plugin.Plugin):
         return response
 
     def handle_request(self, chain, start_response=None, **params):
-        if not self.live or not start_response:
+        if start_response is None:
+            return chain.next(**params)
+
+        if not self.live:
             return chain.next(start_response=start_response, **params)
 
         if not params['request'].is_xhr:
