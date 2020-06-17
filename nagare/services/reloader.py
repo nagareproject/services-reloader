@@ -139,6 +139,7 @@ class Reloader(plugin.Plugin):
         self.static = os.path.join(dist.location, 'nagare', 'static')
 
         self.live = live
+        self.animation = animation
         self.services_to_reload = services_service.reload_handlers
 
         self.dirs_observer = DirsObserver(self.default_dir_action)
@@ -151,10 +152,7 @@ class Reloader(plugin.Plugin):
         if self.live:
             self.query = {'mindelay': str(min_connection_delay), 'maxdelay': str(max_connection_delay)}
 
-            if animation:
-                self.head = b'<style type="text/css">html * { transition: all %dms ease-out }</style>' % animation
-            else:
-                self.head = b''
+        self.head = b''
 
     @property
     def activated(self):
@@ -264,9 +262,11 @@ class Reloader(plugin.Plugin):
         self.version = random.randint(10000000, 99999999)
 
     def handle_start(self, app, statics_service=None):
-        if self.live and (statics_service is not None):
+        if self.live and (statics_service is not None) and hasattr(app, 'static_url') and hasattr(app, 'service_url'):
             static_url = app.static_url + '/nagare/reloader'
-            self.head += b'<script type="text/javascript" src="%s/livereload.js?%%s"></script>' % static_url.encode('ascii')
+            self.head = b'<script type="text/javascript" src="%s/livereload.js?%%s"></script>' % static_url.encode('ascii')
+            if self.animation:
+                self.head += b'<style type="text/css">html * { transition: all %dms ease-out }</style>' % self.animation
             statics_service.register_dir(static_url, self.static)
 
             websocket_url = app.service_url + self.WEBSOCKET_URL
