@@ -98,7 +98,7 @@ class FilesObserver(Observer):
             return
 
         mtime1, action, kw = file_infos
-        mtime2 = os.stat(filename).st_mtime
+        mtime2 = os.stat(filename).st_mtime if os.path.isfile(filename) else mtime1 + 1
         if mtime2 > mtime1:
             if event.event_type != 'deleted':
                 file_infos[0] = mtime2
