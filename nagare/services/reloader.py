@@ -195,8 +195,8 @@ class Reloader(plugin.Plugin):
             self.logger.warn("File `{}` doesn't exist".format(filename))
 
     def default_file_action(self, event, path, only_on_modified=False):
-        if (self.reload is not None) and (not only_on_modified or (event.event_type in ('created', 'modified'))):
-            print('Reloading: %s modified' % path)
+        if (self.reload is not None) and (not only_on_modified or (event.event_type in ('created', 'modified', 'moved'))):
+            self.logger.info('Reloading: %s modified' % path)
             for service in self.services_to_reload:
                 service.handle_reload()
 
