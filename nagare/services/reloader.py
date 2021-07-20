@@ -140,10 +140,9 @@ class Reloader(plugin.Plugin):
 
         self.live = live
         self.animation = animation
-        self.services_to_reload = services_service.reload_handlers
 
-        self.dirs_observer = DirsObserver(self.default_dir_action)
-        self.files_observer = FilesObserver(self.default_file_action)
+        self.dirs_observer = DirsObserver(partial(self.default_dir_action, services_service))
+        self.files_observer = FilesObserver(partial(self.default_file_action, services_service))
 
         self.websockets = set()
         self.reload = lambda self, path: None
@@ -194,16 +193,14 @@ class Reloader(plugin.Plugin):
         if not self.files_observer.schedule(filename, action, **kw):
             self.logger.warn("File `{}` doesn't exist".format(filename))
 
-    def default_file_action(self, event, path, only_on_modified=False):
+    def default_file_action(self, services, event, path, only_on_modified=False):
         if (self.reload is not None) and (not only_on_modified or (event.event_type in ('created', 'modified', 'moved'))):
             self.logger.info('Reloading: %s modified' % path)
-            for service in self.services_to_reload:
-                service.handle_reload()
-
+            services.handle_reload()
             self.reload(self, path)
 
-    def default_dir_action(self, event, dirname, path):
-        self.default_file_action(event, os.path.join(dirname, path) if path else dirname)
+    def default_dir_action(self, services, event, dirname, path):
+        self.default_file_action(services, event, os.path.join(dirname, path) if path else dirname)
 
     def connect_livereload(self, request, websocket, **params):
         if request.path_info.rstrip('/'):
