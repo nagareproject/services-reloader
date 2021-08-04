@@ -14,7 +14,9 @@
       this.Timer = Timer;
       this.handlers = handlers;
       path = this.options.path ? "" + this.options.path : "livereload";
-      this._uri = "ws" + (this.options.https ? "s" : "") + "://" + this.options.host + ":" + this.options.port + "/" + path;
+      this._uri = "ws" + (this.options.https ? "s" : "") + "://" + this.options.host;
+      if(this.options.port) this._uri += ":" + this.options.port;
+      this._uri += "/" + path;
       this._nextDelay = this.options.mindelay;
       this._connectionDesired = false;
       this.protocol = 0;
@@ -495,7 +497,7 @@
     function Options() {
       this.https = false;
       this.host = null;
-      this.port = 35729;
+      this.port = null;
       this.snipver = null;
       this.ext = null;
       this.extver = null;
