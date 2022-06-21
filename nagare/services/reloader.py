@@ -154,6 +154,12 @@ class Reloader(plugin.Plugin):
         self.head = b''
 
     @property
+    def reload_script(self):
+        query = '&'.join(k + '=' + v for k, v in self.query.items()) + '&extver=' + str(self.version)
+
+        return self.head % query.encode('ascii')
+
+    @property
     def activated(self):
         return 'nagare.reload' in os.environ
 
@@ -258,7 +264,7 @@ class Reloader(plugin.Plugin):
 
         self.version = random.randint(10000000, 99999999)
 
-    def handle_start(self, app, statics_service=None):
+    def handle_start(self, app, exceptions_service, statics_service=None):
         if self.live and (statics_service is not None) and hasattr(app, 'static_url') and hasattr(app, 'service_url'):
             static_url = app.static_url + '/nagare/reloader'
             self.head = b'<script type="text/javascript" src="%s/livereload.js?%%s"></script>' % static_url.encode('ascii')
@@ -270,11 +276,16 @@ class Reloader(plugin.Plugin):
             self.query['path'] = websocket_url.lstrip('/')
             statics_service.register_ws(websocket_url, self.connect_livereload)
 
-    def generate_body(self, body):
-        head, tag, content = body.partition(b'</head>')
-        if content:
-            query = '&'.join(k + '=' + v for k, v in self.query.items()) + '&extver=' + str(self.version)
-            body = b''.join([head, self.head % query.encode('ascii'), tag, content])
+            exceptions_service.add_http_exception_handler(self.handle_http_exception)
+
+    @staticmethod
+    def insert_reload_script(body, reload_script):
+        before, tag, after = body.partition(b'</head>')
+        if not tag:
+            before, tag, after = body.partition(b'</body>')
+
+        if tag:
+            body = b''.join([before, reload_script, tag, after])
 
         return body
 
@@ -282,34 +293,28 @@ class Reloader(plugin.Plugin):
         headers = multidict.MultiDict(headers)
         content_type = headers.get('Content-Type')
         if content_type and content_type.startswith('text/html'):
-            body = self.generate_body(body)
+            body = self.insert_reload_script(body, self.reload_script)
             headers['Content-Length'] = str(len(body))
 
         start_response(status, list(headers.iteritems()))(body)
 
-    def generate_exception(self, response):
-        body = response.html_template_obj.template
-        body = self.generate_body(body.encode('utf-8'))
-        response.html_template_obj = string.Template(body.decode('utf-8'))
+    def handle_http_exception(self, http_exception, **params):
+        if http_exception.status_code // 100 in (4, 5):
+            reload_script = self.reload_script
 
-        return response
+            if http_exception.has_body:
+                http_exception.body = self.insert_reload_script(http_exception.body, reload_script)
+            else:
+                template = http_exception.body_template_obj.template
+                http_exception.body_template_obj = string.Template(template + reload_script.decode('ascii'))
+
+        return http_exception
 
     def handle_request(self, chain, start_response=None, **params):
         if start_response is None:
             return chain.next(**params)
 
-        if not self.live:
-            return chain.next(start_response=start_response, **params)
-
-        if not params['request'].is_xhr:
+        if self.live and not params['request'].is_xhr:
             start_response = partial(partial, self.generate_response, start_response)
 
-        try:
-            response = chain.next(start_response=start_response, **params)
-
-            if isinstance(response, exc.WSGIHTTPException):
-                response = self.generate_exception(response)
-        except exc.WSGIHTTPException as response:
-            raise self.generate_exception(response)
-
-        return response
+        return chain.next(start_response=start_response, **params)
