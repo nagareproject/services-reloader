@@ -264,7 +264,7 @@ class Reloader(plugin.Plugin):
 
         self.version = random.randint(10000000, 99999999)
 
-    def handle_start(self, app, exceptions_service, statics_service=None):
+    def handle_serve(self, app, exceptions_service, statics_service=None):
         if self.live and (statics_service is not None) and hasattr(app, 'static_url') and hasattr(app, 'service_url'):
             static_url = app.static_url + '/nagare/reloader'
             self.head = b'<script type="text/javascript" src="%s/livereload.js?%%s"></script>' % static_url.encode('ascii')
@@ -276,7 +276,7 @@ class Reloader(plugin.Plugin):
             self.query['path'] = websocket_url.lstrip('/')
             statics_service.register_ws(websocket_url, self.connect_livereload)
 
-            exceptions_service.add_http_exception_handler(self.handle_http_exception)
+            exceptions_service.add_exception_handler(self.handle_http_exception)
 
     @staticmethod
     def insert_reload_script(body, reload_script):
