@@ -1,5 +1,5 @@
 # --
-# Copyright (c) 2008-2022 Net-ng.
+# Copyright (c) 2008-2023 Net-ng.
 # All rights reserved.
 #
 # This software is licensed under the BSD License, as described in
@@ -7,28 +7,29 @@
 # this distribution.
 # --
 
-import os
-import sys
-import json
-import string
-import random
-import subprocess
-from functools import partial
 from collections import defaultdict
+from functools import partial
+import json
+import os
+import random
+import string
+import subprocess
+import sys
 
 try:
     from watchdog_gevent import Observer
+
     gevent = True
 except ImportError:
     from watchdog.observers import Observer
+
     gevent = False
 
-from webob import multidict, exc
 from nagare.services import plugin
+from webob import exc, multidict
 
 
 class DirsObserver(Observer):
-
     def __init__(self, default_action=lambda dirname, path, event: None):
         super(DirsObserver, self).__init__()
 
@@ -56,14 +57,13 @@ class DirsObserver(Observer):
         for dirname, recursive, action, kw in self._actions:
             dirname2 = dirname + os.path.sep
             if (recursive and evt_dirname2.startswith(dirname2)) or (evt_dirname == dirname):
-                path = evt_path[len(dirname) + 1:]
+                path = evt_path[len(dirname) + 1 :]
                 if not action or action(event, dirname, path, **kw):
                     self._default_action(event, dirname, path, event, not action)
                 break
 
 
 class FilesObserver(Observer):
-
     def __init__(self, default_action=lambda path: None):
         super(FilesObserver, self).__init__()
 
@@ -108,32 +108,31 @@ class FilesObserver(Observer):
 
 
 class Reloader(plugin.Plugin):
-    """Reload on source changes
-    """
+    """Reload on source changes."""
+
     LOAD_PRIORITY = 24
     CONFIG_SPEC = dict(
         plugin.Plugin.CONFIG_SPEC,
         live='boolean(default=True)',
         min_connection_delay='integer(default=500)',
         max_connection_delay='integer(default=500)',
-        animation='integer(default=150)'
+        animation='integer(default=150)',
     )
     WEBSOCKET_URL = '/nagare/reloader/'
 
     def __init__(
-        self,
-        name, dist,
-        live, min_connection_delay, max_connection_delay, animation,
-        services_service,
-        **config
+        self, name, dist, live, min_connection_delay, max_connection_delay, animation, services_service, **config
     ):
-        """Initialization
-        """
+        """Initialization."""
         plugin.Plugin.__init__(
-            self, name, dist,
-            live=live, animation=animation,
-            min_connection_delay=min_connection_delay, max_connection_delay=max_connection_delay,
-            **config
+            self,
+            name,
+            dist,
+            live=live,
+            animation=animation,
+            min_connection_delay=min_connection_delay,
+            max_connection_delay=max_connection_delay,
+            **config,
         )
 
         self.static = os.path.join(dist.location, 'nagare', 'static')
@@ -200,7 +199,9 @@ class Reloader(plugin.Plugin):
             self.logger.warn("File `{}` doesn't exist".format(filename))
 
     def default_file_action(self, services, event, path, only_on_modified=False):
-        if (self.reload is not None) and (not only_on_modified or (event.event_type in ('created', 'modified', 'moved'))):
+        if (self.reload is not None) and (
+            not only_on_modified or (event.event_type in ('created', 'modified', 'moved'))
+        ):
             self.logger.info('Reloading: %s modified' % path)
             services.handle_reload()
             self.reload(self, path)
@@ -267,7 +268,9 @@ class Reloader(plugin.Plugin):
     def handle_serve(self, app, exceptions_service, statics_service=None):
         if self.live and (statics_service is not None) and hasattr(app, 'static_url') and hasattr(app, 'service_url'):
             static_url = app.static_url + '/nagare/reloader'
-            self.head = b'<script type="text/javascript" src="%s/livereload.js?%%s"></script>' % static_url.encode('ascii')
+            self.head = b'<script type="text/javascript" src="%s/livereload.js?%%s"></script>' % static_url.encode(
+                'ascii'
+            )
             if self.animation:
                 self.head += b'<style type="text/css">html * { transition: all %dms ease-out }</style>' % self.animation
             statics_service.register_dir(static_url, self.static)

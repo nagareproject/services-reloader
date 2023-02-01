@@ -1,0 +1,2 @@
+[nagare.services]
+reloader = nagare.services.reloader:Reloader
