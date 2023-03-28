@@ -25,6 +25,7 @@ except ImportError:
 
     gevent = False
 
+from nagare import packaging
 from nagare.services import plugin
 from webob import exc, multidict
 
@@ -135,7 +136,9 @@ class Reloader(plugin.Plugin):
             **config,
         )
 
-        self.static = os.path.join(dist.location, 'nagare', 'static')
+        editable_project_location = packaging.Distribution(dist).editable_project_location
+        location = os.path.join(editable_project_location, 'src') if editable_project_location else dist.location
+        self.static = os.path.join(location, 'nagare', 'static')
 
         self.live = live
         self.animation = animation
@@ -172,7 +175,11 @@ class Reloader(plugin.Plugin):
 
         while exit_code == 3:
             nb_reload += 1
-            args = [sys.executable] + sys.argv
+            nagare = sys.argv[0]
+            if os.exists(nagare + '.exe'):
+                nagare += '.exe'
+
+            args = [sys.executable, nagare] + sys.argv[1:]
 
             environ = os.environ.copy()
             environ['nagare.reload'] = str(nb_reload)
