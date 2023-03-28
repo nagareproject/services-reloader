@@ -176,7 +176,7 @@ class Reloader(plugin.Plugin):
         while exit_code == 3:
             nb_reload += 1
             nagare = sys.argv[0]
-            if os.exists(nagare + '.exe'):
+            if os.path.exists(nagare + '.exe'):
                 nagare += '.exe'
 
             args = [sys.executable, nagare] + sys.argv[1:]
