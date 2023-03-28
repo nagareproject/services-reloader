@@ -270,7 +270,7 @@ class Reloader(plugin.Plugin):
         self.dirs_observer.start()
         self.files_observer.start()
 
-        self.version = random.randint(10000000, 99999999)
+        self.version = random.randint(10000000, 99999999)  # noqa: S311
 
     def handle_serve(self, app, exceptions_service, statics_service=None):
         if self.live and (statics_service is not None) and hasattr(app, 'static_url') and hasattr(app, 'service_url'):
