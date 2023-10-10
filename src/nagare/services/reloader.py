@@ -122,7 +122,16 @@ class Reloader(plugin.Plugin):
     WEBSOCKET_URL = '/nagare/reloader/'
 
     def __init__(
-        self, name, dist, live, min_connection_delay, max_connection_delay, animation, services_service, **config
+        self,
+        name,
+        dist,
+        live,
+        min_connection_delay,
+        max_connection_delay,
+        animation,
+        services_service,
+        statics_service=None,
+        **config,
     ):
         """Initialization."""
         plugin.Plugin.__init__(
@@ -272,22 +281,6 @@ class Reloader(plugin.Plugin):
 
         self.version = random.randint(10000000, 99999999)  # noqa: S311
 
-    def handle_serve(self, app, exceptions_service, statics_service=None):
-        if self.live and (statics_service is not None) and hasattr(app, 'static_url') and hasattr(app, 'service_url'):
-            static_url = app.static_url + '/nagare/reloader'
-            self.head = b'<script type="text/javascript" src="%s/livereload.js?%%s"></script>' % static_url.encode(
-                'ascii'
-            )
-            if self.animation:
-                self.head += b'<style type="text/css">html * { transition: all %dms ease-out }</style>' % self.animation
-            statics_service.register_dir(static_url, self.static)
-
-            websocket_url = app.service_url + self.WEBSOCKET_URL
-            self.query['path'] = websocket_url.lstrip('/')
-            statics_service.register_ws(websocket_url, self.connect_livereload)
-
-            exceptions_service.add_exception_handler(self.handle_http_exception)
-
     @staticmethod
     def insert_reload_script(body, reload_script):
         before, tag, after = body.partition(b'</head>')
@@ -319,6 +312,22 @@ class Reloader(plugin.Plugin):
                 http_exception.body_template_obj = string.Template(template + reload_script.decode('ascii'))
 
         return http_exception
+
+    def handle_start(self, app, exceptions_service, statics_service=None):
+        if self.live and (statics_service is not None) and hasattr(app, 'static_url') and hasattr(app, 'service_url'):
+            static_url = app.static_url + '/nagare/reloader'
+            self.head = b'<script type="text/javascript" src="%s/livereload.js?%%s"></script>' % static_url.encode(
+                'ascii'
+            )
+            if self.animation:
+                self.head += b'<style type="text/css">html * { transition: all %dms ease-out }</style>' % self.animation
+            statics_service.register_dir(static_url, self.static, gzip=True)
+
+            websocket_url = app.service_url + self.WEBSOCKET_URL
+            self.query['path'] = websocket_url.lstrip('/')
+            statics_service.register_ws(websocket_url, self.connect_livereload)
+
+            exceptions_service.add_exception_handler(self.handle_http_exception)
 
     def handle_request(self, chain, start_response=None, **params):
         if start_response is None:
