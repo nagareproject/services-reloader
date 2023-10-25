@@ -14,6 +14,6 @@ repos:
     rev: "v0.1.2"
     hooks:
       - id: ruff
-        files: "^src"
+        files: "src"
       - id: ruff-format
-        files: "^src"
+        files: "src"
