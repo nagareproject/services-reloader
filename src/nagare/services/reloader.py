@@ -65,10 +65,11 @@ class DirsObserver(Observer):
 
 
 class FilesObserver(Observer):
-    def __init__(self, default_action=lambda path: None):
+    def __init__(self, default_action=lambda path: None, files_mtime_check=False):
         super(FilesObserver, self).__init__()
 
         self._default_action = default_action
+        self._files_mtime_check = files_mtime_check
         self._dirs = defaultdict(dict)
 
     def schedule(self, filename, action=None, **kw):
@@ -100,7 +101,7 @@ class FilesObserver(Observer):
 
         mtime1, action, kw = file_infos
         mtime2 = os.stat(filename).st_mtime if os.path.isfile(filename) else mtime1 + 1
-        if mtime2 > mtime1:
+        if not self._files_mtime_check or (mtime2 > mtime1):
             if event.event_type != 'deleted':
                 file_infos[0] = mtime2
 
@@ -114,6 +115,7 @@ class Reloader(plugin.Plugin):
     LOAD_PRIORITY = 24
     CONFIG_SPEC = dict(
         plugin.Plugin.CONFIG_SPEC,
+        files_mtime_check='boolean(default=False)',
         live='boolean(default=True)',
         min_connection_delay='integer(default=500)',
         max_connection_delay='integer(default=500)',
@@ -125,6 +127,7 @@ class Reloader(plugin.Plugin):
         self,
         name,
         dist,
+        files_mtime_check,
         live,
         min_connection_delay,
         max_connection_delay,
@@ -138,6 +141,7 @@ class Reloader(plugin.Plugin):
             self,
             name,
             dist,
+            files_mtime_check=files_mtime_check,
             live=live,
             animation=animation,
             min_connection_delay=min_connection_delay,
@@ -153,7 +157,7 @@ class Reloader(plugin.Plugin):
         self.animation = animation
 
         self.dirs_observer = DirsObserver(partial(self.default_dir_action, services_service))
-        self.files_observer = FilesObserver(partial(self.default_file_action, services_service))
+        self.files_observer = FilesObserver(partial(self.default_file_action, services_service), files_mtime_check)
 
         self.websockets = set()
         self.reload = lambda self, path: None
