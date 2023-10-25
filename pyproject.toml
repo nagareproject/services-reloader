@@ -36,7 +36,6 @@ dev = [
     'sphinx',
     'sphinx_rtd_theme',
     'pre-commit',
-    'black',
     'ruff',
     'pytest',
     'build',
@@ -51,11 +50,6 @@ Tracker = 'https://github.com/nagareproject/services-reloader/issues'
 
 [tool.distutils.bdist_wheel]
 universal = true
-
-[tool.black]
-line-length = 120
-target-version = ['py38']
-skip-string-normalization = true
 
 [tool.ruff]
 select = [
@@ -90,6 +84,9 @@ convention = 'google'
 [tool.ruff.isort]
 known-third-party = ['nagare']
 force-sort-within-sections = true
+
+[tool.ruff.format]
+quote-style = 'single'
 
 [tool.pytest.ini_options]
 testpaths = ['tests']
