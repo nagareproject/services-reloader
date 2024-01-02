@@ -7,14 +7,14 @@
 # this distribution.
 # --
 
-from collections import defaultdict
-from functools import partial
-import json
 import os
+import sys
+import json
 import random
 import string
 import subprocess
-import sys
+from functools import partial
+from collections import defaultdict
 
 try:
     from watchdog_gevent import Observer
@@ -25,16 +25,34 @@ except ImportError:
 
     gevent = False
 
+from webob import exc, multidict
 from nagare import packaging
 from nagare.services import plugin
-from webob import exc, multidict
 
 
-class DirsObserver(Observer):
-    def __init__(self, default_action=lambda dirname, path, event: None):
-        super(DirsObserver, self).__init__()
+class ObserverBase(Observer):
+    def __init__(self, default_action, services_service):
+        super(ObserverBase, self).__init__()
 
         self._default_action = default_action
+        self._services = services_service
+
+    @staticmethod
+    def reload_document(reloader_service):
+        reloader_service.reload_document()
+
+    def execute_callback(self, action, event, *args, **kw):
+        to_restart = self._services(action or (lambda *args, **kw: True), event, *args, **kw)
+        if to_restart is not None:
+            if to_restart:
+                self._services(self._default_action, event, *args, not action)
+            else:
+                self._services(self.reload_document)
+
+
+class DirsObserver(ObserverBase):
+    def __init__(self, default_action=lambda dirname, path, event: None, services_service=None):
+        services_service(super(DirsObserver, self).__init__, default_action)
         self._actions = []
 
     def schedule(self, dirname, action=None, recursive=False, **kw):
@@ -59,16 +77,15 @@ class DirsObserver(Observer):
             dirname2 = dirname + os.path.sep
             if (recursive and evt_dirname2.startswith(dirname2)) or (evt_dirname == dirname):
                 path = evt_path[len(dirname) + 1 :]
-                if not action or action(event, dirname, path, **kw):
-                    self._default_action(event, dirname, path, event, not action)
+
+                self.execute_callback(action, event, dirname, path, **kw)
                 break
 
 
-class FilesObserver(Observer):
-    def __init__(self, default_action=lambda path: None, files_mtime_check=False):
-        super(FilesObserver, self).__init__()
+class FilesObserver(ObserverBase):
+    def __init__(self, default_action=lambda path: None, files_mtime_check=False, services_service=None):
+        services_service(super(FilesObserver, self).__init__, default_action)
 
-        self._default_action = default_action
         self._files_mtime_check = files_mtime_check
         self._dirs = defaultdict(dict)
 
@@ -91,7 +108,7 @@ class FilesObserver(Observer):
         if event.is_directory:
             return
 
-        filename = event.src_path
+        filename = getattr(event, 'dest_path', event.src_path)
         dirname = os.path.dirname(filename)
         basename = os.path.basename(filename)
 
@@ -105,8 +122,7 @@ class FilesObserver(Observer):
             if event.event_type != 'deleted':
                 file_infos[0] = mtime2
 
-            if not action or action(event, filename, **kw):
-                self._default_action(event, filename, not action)
+            self.execute_callback(action, event, filename, **kw)
 
 
 class Reloader(plugin.Plugin):
@@ -156,8 +172,8 @@ class Reloader(plugin.Plugin):
         self.live = live
         self.animation = animation
 
-        self.dirs_observer = DirsObserver(partial(self.default_dir_action, services_service))
-        self.files_observer = FilesObserver(partial(self.default_file_action, services_service), files_mtime_check)
+        self.dirs_observer = services_service(DirsObserver, self.default_dir_action)
+        self.files_observer = services_service(FilesObserver, self.default_file_action, files_mtime_check)
 
         self.websockets = set()
         self.reload = lambda self, path: None
@@ -218,16 +234,16 @@ class Reloader(plugin.Plugin):
         if not self.files_observer.schedule(filename, action, **kw):
             self.logger.warn("File `{}` doesn't exist".format(filename))
 
-    def default_file_action(self, services, event, path, only_on_modified=False):
+    def default_file_action(self, event, path, only_on_modified=False, services_service=None):
         if (self.reload is not None) and (
             not only_on_modified or (event.event_type in ('created', 'modified', 'moved'))
         ):
             self.logger.info('Reloading: %s modified' % path)
-            services.handle_reload()
+            services_service.handle_reload()
             self.reload(self, path)
 
-    def default_dir_action(self, services, event, dirname, path):
-        self.default_file_action(services, event, os.path.join(dirname, path) if path else dirname)
+    def default_dir_action(self, event, dirname, path, only_on_modified=False, services_service=None):
+        services_service(self.default_file_action, event, os.path.join(dirname, path) if path else dirname)
 
     def connect_livereload(self, request, websocket, **params):
         if request.path_info.rstrip('/'):
