@@ -1,5 +1,5 @@
 # --
-# Copyright (c) 2008-2023 Net-ng.
+# Copyright (c) 2008-2024 Net-ng.
 # All rights reserved.
 #
 # This software is licensed under the BSD License, as described in
@@ -26,6 +26,7 @@ except ImportError:
     gevent = False
 
 from webob import exc, multidict
+
 from nagare import packaging
 from nagare.services import plugin
 

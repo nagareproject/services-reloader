@@ -1,5 +1,5 @@
 # =-
-# (C)opyright Net-ng 2023
+# (C)opyright Net-ng 2008-2024
 #
 # This is Net-ng proprietary source code
 # Any reproduction modification or use without prior written
@@ -38,7 +38,6 @@ dev = [
     'pre-commit',
     'ruff',
     'pytest',
-    'build',
     'twine',
 ]
 
@@ -47,9 +46,6 @@ Homepage = 'https://nagare.org'
 Documentation = 'https://nagare.org/doc'
 Source = 'https://github.com/nagareproject/services-reloader'
 Tracker = 'https://github.com/nagareproject/services-reloader/issues'
-
-[tool.distutils.bdist_wheel]
-universal = true
 
 [tool.ruff]
 select = [
@@ -76,13 +72,11 @@ src = ['src']
 
 [tool.ruff.flake8-quotes]
 inline-quotes = 'single'
-multiline-quotes = 'double'
 
 [tool.ruff.pydocstyle]
 convention = 'google'
 
 [tool.ruff.isort]
-known-third-party = ['nagare']
 length-sort = true
 
 [tool.ruff.format]
