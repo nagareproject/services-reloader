@@ -109,7 +109,7 @@ class FilesObserver(ObserverBase):
         if event.is_directory:
             return
 
-        filename = getattr(event, 'dest_path', event.src_path)
+        filename = getattr(event, 'dest_path', None) or event.src_path
         dirname = os.path.dirname(filename)
         basename = os.path.basename(filename)
 
