@@ -51,9 +51,9 @@ class ObserverBase(Observer):
                 self._services(self.reload_document)
 
 
-class DirsObserver(ObserverBase):
+class _DirsObserver(ObserverBase):
     def __init__(self, default_action=lambda dirname, path, event: None, services_service=None):
-        services_service(super(DirsObserver, self).__init__, default_action)
+        services_service(super(_DirsObserver, self).__init__, default_action)
         self._actions = []
 
     def schedule(self, dirname, action=None, recursive=False, **kw):
@@ -65,7 +65,7 @@ class DirsObserver(ObserverBase):
             self._actions.append((dirname, recursive, action, kw))
             self._actions.sort(key=lambda a: len(a[0]), reverse=True)
 
-            super(DirsObserver, self).schedule(self, dirname, recursive)
+            super(_DirsObserver, self).schedule(self, dirname, recursive)
 
         return True
 
@@ -83,9 +83,32 @@ class DirsObserver(ObserverBase):
                 break
 
 
-class FilesObserver(ObserverBase):
+class DirsObserver(object):
+    def __init__(self, default_action=lambda dirname, path, event: None):
+        self.default_action = default_action
+        self.watched_dirs = []
+        self.dirs_observer = None
+
+    def schedule(self, dirname, action=None, recursive=False, **kw):
+        if self.dirs_observer is None:
+            self.watched_dirs.append((dirname, action, recursive, kw))
+        else:
+            print('********************* DIR', dirname)
+            self.dirs_observer.schedule(dirname, action, recursive, **kw)
+
+    def start(self, services_service):
+        self.dirs_observer = services_service(_DirsObserver, self.default_action)
+
+        for dirname, action, recursive, kw in self.watched_dirs:
+            self.dirs_observer.schedule(dirname, action, recursive, **kw)
+
+        self.watched_dirs = []
+        self.dirs_observer.start()
+
+
+class _FilesObserver(ObserverBase):
     def __init__(self, default_action=lambda path: None, files_mtime_check=False, services_service=None):
-        services_service(super(FilesObserver, self).__init__, default_action)
+        services_service(super(_FilesObserver, self).__init__, default_action)
 
         self._files_mtime_check = files_mtime_check
         self._dirs = defaultdict(dict)
@@ -101,7 +124,7 @@ class FilesObserver(ObserverBase):
         basename = os.path.basename(filename)
         self._dirs[dirname][basename] = [os.stat(filename).st_mtime, action, kw]
 
-        super(FilesObserver, self).schedule(self, filename if gevent else dirname)
+        super(_FilesObserver, self).schedule(self, filename if gevent else dirname)
 
         return True
 
@@ -124,6 +147,30 @@ class FilesObserver(ObserverBase):
                 file_infos[0] = mtime2
 
             self.execute_callback(action, event, filename, **kw)
+
+
+class FilesObserver(object):
+    def __init__(self, default_action=lambda path: None, files_mtime_check=False):
+        self.default_action = default_action
+        self.files_mtime_check = files_mtime_check
+        self.watched_files = []
+        self.files_observer = None
+
+    def schedule(self, filename, action=None, **kw):
+        if self.files_observer is None:
+            self.watched_files.append((filename, action, kw))
+        else:
+            print('********************* FILE', filename)
+            self.files_observer.schedule(filename, action, **kw)
+
+    def start(self, services_service):
+        self.files_observer = services_service(_FilesObserver, self.default_action, self.files_mtime_check)
+
+        for filename, action, kw in self.watched_files:
+            self.files_observer.schedule(filename, action, **kw)
+
+        self.watched_files = []
+        self.files_observer.start()
 
 
 class Reloader(plugin.Plugin):
@@ -173,8 +220,8 @@ class Reloader(plugin.Plugin):
         self.live = live
         self.animation = animation
 
-        self.dirs_observer = services_service(DirsObserver, self.default_dir_action)
-        self.files_observer = services_service(FilesObserver, self.default_file_action, files_mtime_check)
+        self.dirs_observer = DirsObserver(self.default_dir_action)
+        self.files_observer = FilesObserver(self.default_file_action, files_mtime_check)
 
         self.websockets = set()
         self.reload = lambda self, path: None
@@ -228,12 +275,10 @@ class Reloader(plugin.Plugin):
         return exit_code
 
     def watch_dir(self, dirname, action=None, recursive=False, **kw):
-        if not self.dirs_observer.schedule(dirname, action, recursive, **kw):
-            self.logger.warn("Directory `{}` doesn't exist".format(dirname))
+        self.dirs_observer.schedule(dirname, action, recursive, **kw)
 
     def watch_file(self, filename, action=None, **kw):
-        if not self.files_observer.schedule(filename, action, **kw):
-            self.logger.warn("File `{}` doesn't exist".format(filename))
+        self.files_observer.schedule(filename, action, **kw)
 
     def default_file_action(self, event, path, only_on_modified=False, services_service=None):
         if (self.reload is not None) and (
@@ -294,11 +339,11 @@ class Reloader(plugin.Plugin):
     def reload_document(self):
         self.reload_asset('')
 
-    def start(self, reload_action, statics_service=None):
+    def start(self, reload_action, services_service, statics_service=None):
         self.reload = reload_action
 
-        self.dirs_observer.start()
-        self.files_observer.start()
+        services_service(self.dirs_observer.start)
+        services_service(self.files_observer.start)
 
         self.version = random.randint(10000000, 99999999)  # noqa: S311
 

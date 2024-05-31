@@ -19,7 +19,12 @@ description = 'Reloader service'
 authors = [{ name = 'Net-ng' }, { email = 'contact@net-ng.com' }]
 license = { file = 'LICENSE.txt' }
 requires-python = '>=3.7'
-dependencies = ['watchdog', 'webob', 'nagare-server']
+dependencies = [
+    'watchdog',
+    'webob',
+    "legacy-cgi ; python_full_version>='3.13.0a1'",
+    'nagare-server'
+]
 
 [project.readme]
 file = 'README.rst'
