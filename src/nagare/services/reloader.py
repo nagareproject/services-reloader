@@ -21,7 +21,12 @@ try:
 
     gevent = True
 except ImportError:
-    from watchdog.observers import Observer
+    if sys.platform.startswith('darwin'):
+        # On MacOS `KqueueObserver` instead of `FSEventObserver` to avoid
+        # "The process has forked and you cannot use this CoreFoundation functionality safely" error
+        from watchdog.observers.kqueue import KqueueObserver as Observer
+    else:
+        from watchdog.observers import Observer
 
     gevent = False
 
@@ -93,7 +98,6 @@ class DirsObserver(object):
         if self.dirs_observer is None:
             self.watched_dirs.append((dirname, action, recursive, kw))
         else:
-            print('********************* DIR', dirname)
             self.dirs_observer.schedule(dirname, action, recursive, **kw)
 
     def start(self, services_service):
@@ -160,7 +164,6 @@ class FilesObserver(object):
         if self.files_observer is None:
             self.watched_files.append((filename, action, kw))
         else:
-            print('********************* FILE', filename)
             self.files_observer.schedule(filename, action, **kw)
 
     def start(self, services_service):
