@@ -70,7 +70,7 @@ class _DirsObserver(ObserverBase):
             self._actions.append((dirname, recursive, action, kw))
             self._actions.sort(key=lambda a: len(a[0]), reverse=True)
 
-            super(_DirsObserver, self).schedule(self, dirname, recursive)
+            super(_DirsObserver, self).schedule(self, dirname, recursive=recursive)
 
         return True
 
