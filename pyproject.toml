@@ -20,10 +20,10 @@ authors = [{ name = 'Net-ng' }, { email = 'contact@net-ng.com' }]
 license = { file = 'LICENSE.txt' }
 requires-python = '>=3.7'
 dependencies = [
-    'watchdog',
+    'watchdog<5.0.0',
     'webob',
     "legacy-cgi ; python_full_version>='3.13.0a1'",
-    'nagare-server'
+    'nagare-server',
 ]
 
 [project.readme]
@@ -37,14 +37,7 @@ entry-points = { file = 'entry-points.txt' }
 'nagare.static' = ['*']
 
 [project.optional-dependencies]
-dev = [
-    'sphinx',
-    'sphinx_rtd_theme',
-    'pre-commit',
-    'ruff',
-    'pytest',
-    'twine',
-]
+dev = ['sphinx', 'sphinx_rtd_theme', 'pre-commit', 'ruff', 'pytest', 'twine']
 
 [project.urls]
 Homepage = 'https://nagare.org'
