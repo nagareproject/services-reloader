@@ -20,7 +20,7 @@ authors = [{ name = 'Net-ng' }, { email = 'contact@net-ng.com' }]
 license = { file = 'LICENSE.txt' }
 requires-python = '>=3.7'
 dependencies = [
-    'watchdog<5.0.0',
+    'watchdog',
     'webob',
     "legacy-cgi ; python_full_version>='3.13.0a1'",
     'nagare-server',
