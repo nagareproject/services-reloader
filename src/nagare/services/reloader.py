@@ -1,5 +1,5 @@
 # --
-# Copyright (c) 2008-2024 Net-ng.
+# Copyright (c) 2014-2025 Net-ng.
 # All rights reserved.
 #
 # This software is licensed under the BSD License, as described in
@@ -38,7 +38,7 @@ from nagare.services import plugin
 
 class ObserverBase(Observer):
     def __init__(self, default_action, services_service):
-        super(ObserverBase, self).__init__()
+        super().__init__()
 
         self._default_action = default_action
         self._services = services_service
@@ -58,7 +58,7 @@ class ObserverBase(Observer):
 
 class _DirsObserver(ObserverBase):
     def __init__(self, default_action=lambda dirname, path, event: None, services_service=None):
-        services_service(super(_DirsObserver, self).__init__, default_action)
+        services_service(super().__init__, default_action)
         self._actions = []
 
     def schedule(self, dirname, action=None, recursive=False, **kw):
@@ -70,7 +70,7 @@ class _DirsObserver(ObserverBase):
             self._actions.append((dirname, recursive, action, kw))
             self._actions.sort(key=lambda a: len(a[0]), reverse=True)
 
-            super(_DirsObserver, self).schedule(self, dirname, recursive=recursive)
+            super().schedule(self, dirname, recursive=recursive)
 
         return True
 
@@ -88,7 +88,7 @@ class _DirsObserver(ObserverBase):
                 break
 
 
-class DirsObserver(object):
+class DirsObserver:
     def __init__(self, default_action=lambda dirname, path, event: None):
         self.default_action = default_action
         self.watched_dirs = []
@@ -112,7 +112,7 @@ class DirsObserver(object):
 
 class _FilesObserver(ObserverBase):
     def __init__(self, default_action=lambda path: None, files_mtime_check=False, services_service=None):
-        services_service(super(_FilesObserver, self).__init__, default_action)
+        services_service(super().__init__, default_action)
 
         self._files_mtime_check = files_mtime_check
         self._dirs = defaultdict(dict)
@@ -128,7 +128,7 @@ class _FilesObserver(ObserverBase):
         basename = os.path.basename(filename)
         self._dirs[dirname][basename] = [os.stat(filename).st_mtime, action, kw]
 
-        super(_FilesObserver, self).schedule(self, filename if gevent else dirname)
+        super().schedule(self, filename if gevent else dirname)
 
         return True
 
@@ -153,7 +153,7 @@ class _FilesObserver(ObserverBase):
             self.execute_callback(action, event, filename, **kw)
 
 
-class FilesObserver(object):
+class FilesObserver:
     def __init__(self, default_action=lambda path: None, files_mtime_check=False):
         self.default_action = default_action
         self.files_mtime_check = files_mtime_check
@@ -180,14 +180,13 @@ class Reloader(plugin.Plugin):
     """Reload on source changes."""
 
     LOAD_PRIORITY = 24
-    CONFIG_SPEC = dict(
-        plugin.Plugin.CONFIG_SPEC,
-        files_mtime_check='boolean(default=False)',
-        live='boolean(default=True)',
-        min_connection_delay='integer(default=500)',
-        max_connection_delay='integer(default=500)',
-        animation='integer(default=150)',
-    )
+    CONFIG_SPEC = plugin.Plugin.CONFIG_SPEC | {
+        'files_mtime_check': 'boolean(default=False)',
+        'live': 'boolean(default=True)',
+        'min_connection_delay': 'integer(default=500)',
+        'max_connection_delay': 'integer(default=500)',
+        'animation': 'integer(default=150)',
+    }
     WEBSOCKET_URL = '/nagare/reloader/'
 
     def __init__(
