@@ -21,16 +21,11 @@ try:
 
     gevent = True
 except ImportError:
-    if sys.platform.startswith('darwin'):
-        # On MacOS `KqueueObserver` instead of `FSEventObserver` to avoid
-        # "The process has forked and you cannot use this CoreFoundation functionality safely" error
-        from watchdog.observers.kqueue import KqueueObserver as Observer
-    else:
-        from watchdog.observers import Observer
+    from watchdog.observers import Observer
 
     gevent = False
 
-from webob import exc, multidict
+from webob import multidict
 
 from nagare import packaging
 from nagare.services import plugin
@@ -225,7 +220,7 @@ class Reloader(plugin.Plugin):
         self.dirs_observer = DirsObserver(self.default_dir_action)
         self.files_observer = FilesObserver(self.default_file_action, files_mtime_check)
 
-        self.websockets = set()
+        self.websockets = None
         self.reload = lambda self, path: None
         self.version = 0
 
@@ -293,18 +288,6 @@ class Reloader(plugin.Plugin):
     def default_dir_action(self, event, dirname, path, only_on_modified=False, services_service=None):
         services_service(self.default_file_action, event, os.path.join(dirname, path) if path else dirname)
 
-    def connect_livereload(self, request, websocket, **params):
-        if request.path_info.rstrip('/'):
-            raise exc.HTTPNotFound()
-
-        if websocket is None:
-            raise exc.HTTPBadRequest()
-
-        websocket.received_message = partial(self.receive_livereload, websocket)
-        websocket.closed = partial(self.close_livereload, websocket)
-
-        self.websockets.add(websocket)
-
     def receive_livereload(self, websocket, message):
         command = json.loads(message.data)
 
@@ -323,14 +306,8 @@ class Reloader(plugin.Plugin):
             pass
 
     def broadcast_livereload(self, command):
-        message = json.dumps(command)
-        for websocket in self.websockets:
-            websocket.send(message)
-
-    def close_livereload(self, websocket, code=None, reason=None):
-        del websocket.received_message
-        del websocket.closed
-        self.websockets.remove(websocket)
+        if self.websockets is not None:
+            self.websockets.broadcast(json.dumps(command))
 
     def alert(self, message):
         self.broadcast_livereload({'command': 'alert', 'message': message})
@@ -393,7 +370,7 @@ class Reloader(plugin.Plugin):
 
             websocket_url = app.service_url + self.WEBSOCKET_URL
             self.query['path'] = websocket_url.lstrip('/')
-            statics_service.register_ws(websocket_url, self.connect_livereload)
+            self.websockets = statics_service.register_ws(websocket_url, on_receive=self.receive_livereload)
 
             exceptions_service.add_exception_handler(self.handle_http_exception)
 
