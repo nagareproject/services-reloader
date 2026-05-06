@@ -1,0 +1,15 @@
+directory: ..
+config:
+  browserify_bin: ./node_modules/.bin/browserify
+  browserify_transform:
+    - envify
+    - babelify
+
+bundles:
+  nagare_js:
+    filters:
+      - browserify
+      - rjsmin
+    contents:
+      - assets/src/startup.js
+    output: src/nagare/static/livereload.js

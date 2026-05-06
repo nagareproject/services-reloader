@@ -8,8 +8,16 @@
 # --
 
 [build-system]
-requires = ['setuptools', 'wheel', 'setuptools_scm']
-build-backend = 'setuptools.build_meta'
+requires = [
+    'setuptools',
+    'wheel',
+    'setuptools_scm',
+    'webassets',
+    'webassets-browserify',
+    'PyYAML'
+]
+build-backend = 'backend'
+backend-path = ['src/nagare/custom_build']
 
 [tool.setuptools_scm]
 
@@ -19,7 +27,7 @@ dynamic = ['version', 'entry-points']
 description = 'Reloader service'
 authors = [{ name = 'Net-ng' }, { email = 'contact@net-ng.com' }]
 license = { file = 'LICENSE.txt' }
-requires-python = '>=3.9'
+requires-python = '>=3.10'
 dependencies = [
     'watchdog',
     'webob',
@@ -38,7 +46,7 @@ entry-points = { file = 'entry-points.txt' }
 'nagare.static' = ['*']
 
 [project.optional-dependencies]
-dev = ['sphinx', 'sphinx_rtd_theme', 'pre-commit', 'ruff', 'pytest', 'twine']
+dev = ['sphinx', 'sphinx_rtd_theme', 'pre-commit', 'ruff', 'pytest', 'twine', 'webassets', 'webassets-browserify']
 
 [project.urls]
 Homepage = 'https://nagare.org'

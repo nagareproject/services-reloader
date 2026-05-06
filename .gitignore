@@ -16,8 +16,10 @@
 .coverage
 .eggs
 *.swp
-/build
-/dist
+build
+dist
 htmlcov
-nbproject
-/doc/_build
+doc/_build
+.webassets-cache
+node_modules
+src/nagare/static/livereload.js*
