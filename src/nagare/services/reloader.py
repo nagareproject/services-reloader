@@ -17,6 +17,11 @@ from functools import partial
 from itertools import dropwhile
 from collections import OrderedDict, defaultdict
 
+from webob import multidict
+
+from nagare import packaging
+from nagare.services import plugin
+
 try:
     from watchdog_gevent import Observer
 
@@ -24,12 +29,10 @@ try:
 except ImportError:
     from watchdog.observers import Observer
 
+    if sys.platform.startswith('darwin'):
+        from watchdog.observers.kqueue import KqueueObserver as Observer
+
     gevent = False
-
-from webob import multidict
-
-from nagare import packaging
-from nagare.services import plugin
 
 
 class KeyedDebouncer:
