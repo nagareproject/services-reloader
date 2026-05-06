@@ -9,7 +9,6 @@
 
 import os
 import sys
-import json
 import time
 import random
 import string
@@ -197,11 +196,10 @@ class Reloader(plugin.Plugin):
     CONFIG_SPEC = plugin.Plugin.CONFIG_SPEC | {
         'files_mtime_check': 'boolean(default=False)',
         'live': 'boolean(default=True)',
-        'min_connection_delay': 'integer(default=500)',
-        'max_connection_delay': 'integer(default=500)',
+        'live_reconnection_delay': 'integer(default=500, help="Connection retries delay on client (in ms)")',
         'animation': 'integer(default=150)',
     }
-    WEBSOCKET_URL = '/nagare/reloader/'
+    SSE_URL = '/nagare/reloader/'
 
     def __init__(
         self,
@@ -209,8 +207,7 @@ class Reloader(plugin.Plugin):
         dist,
         files_mtime_check,
         live,
-        min_connection_delay,
-        max_connection_delay,
+        live_reconnection_delay,
         animation,
         services_service,
         statics_service=None,
@@ -224,8 +221,7 @@ class Reloader(plugin.Plugin):
             files_mtime_check=files_mtime_check,
             live=live,
             animation=animation,
-            min_connection_delay=min_connection_delay,
-            max_connection_delay=max_connection_delay,
+            live_reconnection_delay=live_reconnection_delay,
             **config,
         )
 
@@ -235,24 +231,19 @@ class Reloader(plugin.Plugin):
 
         self.live = live
         self.animation = animation
+        self.delay = live_reconnection_delay
 
         self.dirs_observer = DirsObserver(self.default_dir_action)
         self.files_observer = FilesObserver(self.default_file_action, files_mtime_check)
 
-        self.websockets = None
+        self.sse = None
         self.reload = lambda self, path: None
         self.version = 0
-
-        if self.live:
-            self.query = {'mindelay': str(min_connection_delay), 'maxdelay': str(max_connection_delay)}
-
         self.head = b''
 
     @property
     def reload_script(self):
-        query = '&'.join(k + '=' + v for k, v in self.query.items()) + '&extver=' + str(self.version)
-
-        return self.head % query.encode('ascii')
+        return self.head % self.version
 
     @property
     def activated(self):
@@ -300,39 +291,28 @@ class Reloader(plugin.Plugin):
         if (self.reload is not None) and (
             not only_on_modified or (event.event_type in ('created', 'modified', 'moved'))
         ):
-            self.logger.info('Reloading: %s modified' % path)
+            self.logger.info('Reloading: %s modified', path)
             services_service.handle_reload()
             self.reload(self, path)
 
     def default_dir_action(self, event, dirname, path, only_on_modified=False, services_service=None):
         services_service(self.default_file_action, event, os.path.join(dirname, path) if path else dirname)
 
-    def receive_livereload(self, websocket, message):
-        command = json.loads(message.data)
+    def connect_livereload(self, sse, request):
+        sse.send(f'retry: {self.delay}')
 
-        if command['command'] == 'hello':
-            response = {
-                'command': 'hello',
-                'protocols': ['http://livereload.com/protocols/official-7'],
-                'serverName': 'nagare-livereload',
-            }
-            websocket.send(json.dumps(response))
+        if int(request.params.get('extver', self.version)) != self.version:
+            self.reload_document()
 
-            if command['extver'] != self.version:
-                self.reload_document()
-
-        if command['command'] == 'info':
-            pass
-
-    def broadcast_livereload(self, command):
-        if self.websockets is not None:
-            self.websockets.broadcast(json.dumps(command))
+    def broadcast_livereload(self, event, data):
+        if self.sse is not None:
+            self.sse.broadcast(event, data)
 
     def alert(self, message):
-        self.broadcast_livereload({'command': 'alert', 'message': message})
+        self.broadcast_livereload('alert', message)
 
     def reload_asset(self, path):
-        self.broadcast_livereload({'command': 'reload', 'path': path})
+        self.broadcast_livereload('reload', path)
 
     def reload_document(self):
         self.reload_asset('')
@@ -379,17 +359,18 @@ class Reloader(plugin.Plugin):
 
     def handle_start(self, app, exceptions_service, statics_service=None):
         if self.live and (statics_service is not None) and hasattr(app, 'static_url') and hasattr(app, 'service_url'):
-            static_url = app.static_url + '/nagare/reloader'
-            self.head = b'<script type="text/javascript" src="%s/livereload.js?%%s"></script>' % static_url.encode(
-                'ascii'
-            )
-            if self.animation:
-                self.head += b'<style type="text/css">html * { transition: all %dms ease-out }</style>' % self.animation
-            statics_service.register_dir(static_url, self.static, gzip=True)
+            sse_static_url = app.static_url + '/nagare/reloader'
+            sse_url = app.service_url.lstrip('/') + self.SSE_URL
+            script_url = f'{sse_static_url}/livereload.js?path={sse_url}&extver=%d'
 
-            websocket_url = app.service_url + self.WEBSOCKET_URL
-            self.query['path'] = websocket_url.lstrip('/')
-            self.websockets = statics_service.register_ws(websocket_url, on_receive=self.receive_livereload)
+            head = f'<script type="text/javascript" src="{script_url}"></script>'
+            if self.animation:
+                head += f'<style type="text/css">html * {{ transition: all {self.animation}ms ease-out }}</style>'
+
+            self.head = head.encode('utf-8')
+
+            statics_service.register_dir(sse_static_url, self.static, gzip=True)
+            self.sse = statics_service.register_sse(sse_url, on_connect=self.connect_livereload)
 
             exceptions_service.add_exception_handler(self.handle_http_exception)
 
