@@ -10,11 +10,13 @@
 import os
 import sys
 import json
+import time
 import random
 import string
 import subprocess
 from functools import partial
-from collections import defaultdict
+from itertools import dropwhile
+from collections import OrderedDict, defaultdict
 
 try:
     from watchdog_gevent import Observer
@@ -31,12 +33,29 @@ from nagare import packaging
 from nagare.services import plugin
 
 
+class KeyedDebouncer:
+    def __init__(self, ttl=1):
+        self.events = OrderedDict()
+        self.ttl = ttl
+
+    def __call__(self, event):
+        t0 = time.monotonic()
+        self.events = OrderedDict(dropwhile(lambda e: e[1] < t0 - self.ttl, self.events.items()))
+        return self.events.setdefault(event, t0) == t0
+
+
 class ObserverBase(Observer):
     def __init__(self, default_action, services_service):
         super().__init__()
 
         self._default_action = default_action
         self._services = services_service
+
+        self.debouncer = KeyedDebouncer()
+
+    def dispatch(self, event):
+        if self.debouncer(event):
+            self._dispatch(event)
 
     @staticmethod
     def reload_document(reloader_service):
@@ -69,7 +88,7 @@ class _DirsObserver(ObserverBase):
 
         return True
 
-    def dispatch(self, event):
+    def _dispatch(self, event):
         evt_path = event.src_path
         evt_dirname = evt_path if event.is_directory else os.path.dirname(evt_path)
         evt_dirname2 = evt_dirname + os.path.sep
@@ -127,7 +146,7 @@ class _FilesObserver(ObserverBase):
 
         return True
 
-    def dispatch(self, event):
+    def _dispatch(self, event):
         if event.is_directory:
             return
 
