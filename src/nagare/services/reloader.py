@@ -67,7 +67,7 @@ class ObserverBase(Observer):
         to_restart = self._services(action or (lambda *args, **kw: True), event, *args, **kw)
         if to_restart is not None:
             if to_restart:
-                self._services(self._default_action, event, *args, not action)
+                self._services(self._default_action, event, *args)
             else:
                 self._services(self.reload_document)
 
@@ -197,6 +197,7 @@ class Reloader(plugin.Plugin):
 
     LOAD_PRIORITY = 24
     CONFIG_SPEC = plugin.Plugin.CONFIG_SPEC | {
+        'modification_events': 'string_list(default=["created", "modified", "moved"])',
         'files_mtime_check': 'boolean(default=False)',
         'live': 'boolean(default=True)',
         'live_reconnection_delay': 'integer(default=500, help="Connection retries delay on client (in ms)")',
@@ -208,6 +209,7 @@ class Reloader(plugin.Plugin):
         self,
         name,
         dist,
+        modification_events,
         files_mtime_check,
         live,
         live_reconnection_delay,
@@ -221,6 +223,7 @@ class Reloader(plugin.Plugin):
             self,
             name,
             dist,
+            modification_events=modification_events,
             files_mtime_check=files_mtime_check,
             live=live,
             animation=animation,
@@ -232,6 +235,7 @@ class Reloader(plugin.Plugin):
         location = os.path.join(editable_project_location, 'src') if editable_project_location else dist.location
         self.static = os.path.join(location, 'nagare', 'static')
 
+        self.modification_events = {event for e in modification_events if (event := e.strip())}
         self.live = live
         self.animation = animation
         self.delay = live_reconnection_delay
@@ -290,15 +294,13 @@ class Reloader(plugin.Plugin):
     def watch_file(self, filename, action=None, **kw):
         self.files_observer.schedule(filename, action, **kw)
 
-    def default_file_action(self, event, path, only_on_modified=False, services_service=None):
-        if (self.reload is not None) and (
-            not only_on_modified or (event.event_type in ('created', 'modified', 'moved'))
-        ):
+    def default_file_action(self, event, path, services_service):
+        if (self.reload is not None) and (not self.modification_events or event.event_type in self.modification_events):
             self.logger.info('Reloading: %s modified', path)
             services_service.handle_reload()
             self.reload(self, path)
 
-    def default_dir_action(self, event, dirname, path, only_on_modified=False, services_service=None):
+    def default_dir_action(self, event, dirname, path, services_service):
         services_service(self.default_file_action, event, os.path.join(dirname, path) if path else dirname)
 
     def connect_livereload(self, sse, request):
