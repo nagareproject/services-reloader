@@ -10,6 +10,7 @@
 import os
 import sys
 import time
+import uuid
 import random
 import string
 import subprocess
@@ -250,7 +251,7 @@ class Reloader(plugin.Plugin):
 
     @property
     def reload_script(self):
-        return self.head % self.version
+        return self.head % (str(uuid.uuid4()).encode('ascii'), self.version)
 
     @property
     def activated(self):
@@ -366,7 +367,7 @@ class Reloader(plugin.Plugin):
         if self.live and (statics_service is not None) and hasattr(app, 'static_url') and hasattr(app, 'service_url'):
             sse_static_url = app.static_url + '/nagare/reloader'
             sse_url = app.service_url.lstrip('/') + self.SSE_URL
-            script_url = f'{sse_static_url}/livereload.js?path={sse_url}&extver=%d'
+            script_url = f'{sse_static_url}/livereload.js?path={sse_url}&sse_id=%s&extver=%d'
 
             head = f'<script type="text/javascript" src="{script_url}"></script>'
             if self.animation:
